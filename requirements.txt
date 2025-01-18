@@ -2,3 +2,6 @@ Pillow
 aiohttp
 asyncio
 python-telegram-bot
+pymongo
+aiogram
+sqlite3

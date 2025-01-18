@@ -1,5 +1,8 @@
+import base64
 import io
+import json
 import logging
+import re
 
 import aiohttp
 import asyncio
@@ -13,6 +16,26 @@ if not os.path.exists("cache"):
     os.makedirs("cache")
 
 current_dir = os.path.dirname(__file__)
+TOKEN = "7280187426:AAFoH-W21uUGi9X2CqAD09NIKutlY8cSha8"
+directory_actual = os.path.dirname(os.path.abspath(__file__))
+FONT_PATH = os.path.join(directory_actual, "fonts", "font.ttf")
+
+DEFAULT_SETTINGS = {
+        'user_id': None,
+        'language': 'en',
+        'show_skins': True,
+        'show_backpacks': True,
+        'show_pickaxes': True,
+        'show_emotes': True,
+        'show_gliders': True,
+        'show_wraps': True,
+        'show_sprays': True,
+        'show_online_status': True,
+        'auto_delete_friends': False,
+        'auto_delete_foreign_accounts': False,
+        'auto_delete__archive_items': False,
+        'auto_close_profile': False,
+    }
 
 rarity_backgrounds = {
     "Common": os.path.join(current_dir, "backgrounds", "common.png"),
@@ -21,16 +44,16 @@ rarity_backgrounds = {
     "Epic": os.path.join(current_dir, "backgrounds", "epic.png"),
     "Legendary": os.path.join(current_dir, "backgrounds", "legendary.png"),
     "Mythic": os.path.join(current_dir, "backgrounds", "mythic.png"),
-    "Icon Series": os.path.join(current_dir, "backgrounds", "idolo.png"),
-    "DARK SERIES": os.path.join(current_dir, "backgrounds", "dark.png"),
-    "Star Wars Series": os.path.join(current_dir, "backgrounds", "starwars.png"),
     "MARVEL SERIES": os.path.join(current_dir, "backgrounds", "marvel.png"),
+    "DARK SERIES": os.path.join(current_dir, "backgrounds", "dark.png"),
     "DC SERIES": os.path.join(current_dir, "backgrounds", "dc.png"),
-    "Gaming Legends Series": os.path.join(current_dir, "backgrounds", "gaming.png"),
-    "Shadow Series": os.path.join(current_dir, "backgrounds", "shadow.png"),
-    "Slurp Series": os.path.join(current_dir, "backgrounds", "slurp.png"),
-    "Lava Series": os.path.join(current_dir, "backgrounds", "lava.png"),
-    "Frozen Series": os.path.join(current_dir, "backgrounds", "ice.png"),
+    "FROZEN SERIES": os.path.join(current_dir, "backgrounds", "frozen.png"),
+    "GAMING LEGENDS SERIES": os.path.join(current_dir, "backgrounds", "gaming.png"),
+    "LAVA SERIES": os.path.join(current_dir, "backgrounds", "lava.png"),
+    "SHADOW SERIES": os.path.join(current_dir, "backgrounds", "shadow.png"),
+    "SLURP SERIES": os.path.join(current_dir, "backgrounds", "slurp.png"),
+    "STAR WARS SERIES": os.path.join(current_dir, "backgrounds", "star_wars.png"),
+    "ICON SERIES": os.path.join(current_dir, "backgrounds", "icon_series.png"),
 }
 
 special_rarities = {
@@ -45,6 +68,248 @@ special_rarities = {
     "LAVA SERIES",
     "FROZEN SERIES",
 }
+
+
+Image.MAX_IMAGE_PIXELS = None
+
+VERIFICATION_COUNT_FILE = "verification.json"
+
+
+def load_verification_counts():
+    if os.path.exists(VERIFICATION_COUNT_FILE):
+        with open(VERIFICATION_COUNT_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+
+def save_verification_counts(counts):
+    with open(VERIFICATION_COUNT_FILE, "w") as f:
+        json.dump(counts, f)
+
+
+def bool_to_emoji(value):
+    return "✅" if value else "❌"
+
+
+def country_to_flag(country_code):
+    if len(country_code) != 2:
+        return country_code
+    return chr(ord(country_code[0]) + 127397) + chr(ord(country_code[1]) + 127397)
+
+
+def mask_email(email):
+    """
+    Маскирует локальную часть email-адреса, оставляя только первый и последний символы.
+    Например: "example@example.com" -> "e*****e@example.com".
+    """
+    if not email or "@" not in email:
+        return email
+
+    # Регулярное выражение для замены локальной части email
+    masked_email = re.sub(r"(?<=^.)(.*?)(?=.@)", lambda m: "*" * len(m.group(1)), email)
+    return masked_email
+
+
+def mask_account_id(account_id):
+    """
+    Маскирует центральную часть account_id, оставляя первые 2 и последние 2 символа.
+    Например: "1234567890" -> "12*****890".
+    """
+    if not account_id or len(account_id) <= 4:
+        return account_id
+
+    # Регулярное выражение для замены центральной части
+    masked_id = re.sub(r"(?<=.{2}).(?=.{2}$)", "*", account_id)
+    return masked_id
+
+
+idpattern = re.compile(r"athena(.*?):(.*?)_(.*?)")
+
+current_dir = os.path.dirname(__file__)
+rarity_backgrounds = {
+    "Common": os.path.join(current_dir, "backgrounds", "common.png"),
+    "Uncommon": os.path.join(current_dir, "backgrounds", "uncommon.png"),
+    "Rare": os.path.join(current_dir, "backgrounds", "rare.png"),
+    "Epic": os.path.join(current_dir, "backgrounds", "epic.png"),
+    "Legendary": os.path.join(current_dir, "backgrounds", "legendary.png"),
+    "Mythic": os.path.join(current_dir, "backgrounds", "mythic.png"),
+    "Icon Series": os.path.join(current_dir, "backgrounds", "icon_series.png"),
+    "DARK SERIES": os.path.join(current_dir, "backgrounds", "dark.png"),
+    "Star Wars Series": os.path.join(current_dir, "backgrounds", "star_wars.png"),
+    "MARVEL SERIES": os.path.join(current_dir, "backgrounds", "marvel.png"),
+    "DC SERIES": os.path.join(current_dir, "backgrounds", "dc.png"),
+    "Gaming Legends Series": os.path.join(current_dir, "backgrounds", "gaming.png"),
+    "Shadow Series": os.path.join(current_dir, "backgrounds", "shadow.png"),
+    "Slurp Series": os.path.join(current_dir, "backgrounds", "slurp.png"),
+    "Lava Series": os.path.join(current_dir, "backgrounds", "lava.png"),
+    "Frozen Series": os.path.join(current_dir, "backgrounds", "frozen.png"),
+}
+
+rarity_priority = {
+    "Mythic": 1,
+    "Legendary": 2,
+    "Epic": 13,
+    "Rare": 14,
+    "Uncommon": 15,
+    "Common": 16,
+    "Icon Series": 11,
+    "DARK SERIES": 3,
+    "Star Wars Series": 5,
+    "MARVEL SERIES": 6,
+    "DC SERIES": 12,
+    "Gaming Legends Series": 9,
+    "Shadow Series": 10,
+    "Slurp Series": 4,
+    "Lava Series": 7,
+    "Frozen Series": 8,
+}
+
+# mythic_ids = {
+#     "cid_017_athena_commando_m",
+#     "cid_028_athena_commando_f",
+#     "cid_029_athena_commando_f_halloween",
+#     "cid_032_athena_commando_m_medieval",
+#     "cid_033_athena_commando_f_medieval",
+#     "cid_035_athena_commando_m_medieval",
+#     "cid_a_256_athena_commando_f_uproarbraids_8iozw",
+#     "cid_052_athena_commando_f_psblue",
+#     "cid_095_athena_commando_m_founder",
+#     "cid_096_athena_commando_f_founder",
+#     "cid_113_athena_commando_m_blueace",
+#     "cid_114_athena_commando_f_tacticalwoodland",
+#     "cid_175_athena_commando_m_celestial",
+#     "cid_089_athena_commando_m_retrogrey",
+#     "cid_085_athena_commando_m_twitch",
+#     "cid_174_athena_commando_f_carbidewhite",
+#     "cid_183_athena_commando_m_modernmilitaryred",
+#     "cid_207_athena_commando_m_footballdudea",
+#     "cid_208_athena_commando_m_footballdudeb",
+#     "cid_209_athena_commando_m_footballdudec",
+#     "cid_210_athena_commando_f_footballgirla",
+#     "cid_030_athena_commando_m_halloween",
+#     "cid_211_athena_commando_f_footballgirlb",
+#     "cid_212_athena_commando_f_footballgirlc",
+#     "cid_238_athena_commando_f_footballgirld",
+#     "cid_239_athena_commando_m_footballduded",
+#     "cid_240_athena_commando_f_plague",
+#     "cid_313_athena_commando_m_kpopfashion",
+#     "cid_082_athena_commando_m_scavenger",
+#     "cid_090_athena_commando_m_tactical",
+#     "cid_342_athena_commando_m_streetracermetallic",
+#     "cid_434_athena_commando_f_stealthhonor",
+#     "cid_441_athena_commando_f_cyberscavengerblue",
+#     "cid_479_athena_commando_f_davinci",
+#     "cid_657_athena_commando_f_techopsblue",
+#     "cid_478_athena_commando_f_worldcup",
+#     "cid_515_athena_commando_m_barbequelarry",
+#     "cid_516_athena_commando_m_blackwidowrogue",
+#     "cid_657_athena_commando_f_techOpsBlue",
+#     "cid_619_athena_commando_f_techllama",
+#     "cid_660_athena_commando_f_bandageninjablue",
+#     "cid_703_athena_commando_m_cyclone",
+#     "cid_084_athena_commando_m_assassin",
+#     "cid_083_athena_commando_f_tactical",
+#     "cid_761_athena_commando_m_cyclonespace",
+#     "cid_783_athena_commando_m_aquajacket",
+#     "cid_964_athena_commando_m_historian_869bc",
+#     "cid_084_athena_commando_m_assassin",
+#     "cid_039_athena_commando_f_disco",
+#     "cid_116_athena_commando_m_carbideblack",
+#     "eid_ashtonboardwalk",
+#     "eid_ashtonsaltlake",
+#     "eid_bendy",
+#     "eid_bollywood",
+#     "eid_chicken",
+#     "cid_757_athena_commando_f_wildcat",
+#     "cid_080_athena_commando_m_space",
+#     "eid_crackshotclock",
+#     "eid_dab",
+#     "eid_fireworksspin",
+#     "eid_fresh",
+#     "eid_griddles",
+#     "eid_hiphop01",
+#     "eid_iceking",
+#     "eid_kpopdance03",
+#     "eid_macaroon_45lhe",
+#     "eid_ridethepony_athena",
+#     "eid_robot",
+#     "eid_rockguitar",
+#     "eid_solartheory",
+#     "eid_taketheL",
+#     "eid_tapshuffle",
+#     "cid_386_athena_commando_m_streetopsstealth",
+#     "cid_371_athena_commando_m_speedymidnight",
+#     "eid_torchsnuffer",
+#     "eid_trophycelebrationfncs",
+#     "eid_trophycelebration",
+#     "eid_twistdaytona",
+#     "eid_zest_q1k5v",
+#     "founderumbrella",
+#     "founderglider",
+#     "glider_id_001",
+#     "glider_id_002_medieval",
+#     "glider_id_003_district",
+#     "glider_id_004_disco",
+#     "glider_id_014_dragon",
+#     "glider_id_090_celestial",
+#     "glider_id_176_blackmondaycape_4p79k",
+#     "glider_id_206_donut",
+#     "umbrella_snowflake",
+#     "glider_warthog",
+#     "glider_voyager",
+#     "bid_001_bluesquire",
+#     "bid_002_royaleknight",
+#     "bid_004_blackknight",
+#     "bid_005_raptor",
+#     "bid_025_tactical",
+#     "eid_electroshuffle",
+#     "cid_850_athena_commando_f_skullbritecube",
+#     "bid_024_space",
+#     "bid_027_scavenger",
+#     "bid_029_retrogrey",
+#     "bid_030_tacticalrogue",
+#     "bid_055_psburnout",
+#     "bid_072_vikingmale",
+#     "bid_103_clawed",
+#     "bid_102_buckles",
+#     "bid_138_celestial",
+#     "bid_468_cyclone",
+#     "bid_520_cycloneuniverse",
+#     "halloweenscythe",
+#     "pickaxe_id_013_teslacoil",
+#     "pickaxe_id_015_holidaycandycane",
+#     "pickaxe_id_021_megalodon",
+#     "pickaxe_id_019_heart",
+#     "pickaxe_id_029_assassin",
+#     "pickaxe_id_077_carbidewhite",
+#     "pickaxe_id_088_psburnout",
+#     "pickaxe_id_116_celestial",
+#     "pickaxe_id_294_candycane",
+#     "pickaxe_id_359_cyclonemale",
+#     "pickaxe_id_376_fncs",
+#     "pickaxe_id_508_historianmale_6bqsw",
+#     "pickaxe_id_011_medieval",
+#     "eid_takethel",
+#     "eid_floss",
+#     "pickaxe_id_804_fncss20male",
+#     "pickaxe_id_stw007_basic",
+#     "pickaxe_lockjaw",
+# }
+
+CLIENT_ID = "ec684b8c687f479fadea3cb2ad83f5c6"
+CLIENT_SECRET = "e1f31c211f28413186262d37a13fc84d"
+IOS_CLIENT_ID = "3f69e56c7649492c8cc29f1af08a8a12"
+IOS_CLIENT_SECRET = "b51ee9cb12234f50a69efa67ef53812e"
+
+CREDENTIALS = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode("utf-8")).decode(
+    "utf-8"
+)
+IOS_CREDENTIALS = base64.b64encode(
+    f"{IOS_CLIENT_ID}:{IOS_CLIENT_SECRET}".encode("utf-8")
+).decode("utf-8")
+
+SWITCH_TOKEN = "OThmN2U0MmMyZTNhNGY4NmE3NGViNDNmYmI0MWVkMzk6MGEyNDQ5YTItMDAxYS00NTFlLWFmZWMtM2U4MTI5MDFjNGQ3"
+IOS_TOKEN = "MzQ0NmNkNzI2OTRjNGE0NDg1ZDgxYjc3YWRiYjIxNDE6OTIwOWQ0YTVlMjVhNDU3ZmI5YjA3NDg5ZDMxM2I0MWE="
 
 
 async def get_cosmetic_requirements(filename):
@@ -163,7 +428,9 @@ async def download_images(session, cosmetic_id, semaphore):
                         )
                         logger.info(f"Combining image {name} with background")
 
-                        combined_image = await combine_with_background(session, rarity, icon_path, background_path, name, image_url)
+                        combined_image = await combine_with_background(
+                            session, rarity, icon_path, background_path, name, image_url
+                        )
                         combined_image.save(icon_path)
                     print(f"Загружено изображение: {icon_path}")
         except Exception as e:
@@ -185,7 +452,11 @@ async def combine_with_background(
         async with session.get(image_url) as response:
             background = Image.open(background_path).convert("RGBA")
             image_data = await response.read()
-            icon = Image.open(io.BytesIO(image_data)).convert("RGBA").resize(background.size, Image.Resampling.LANCZOS)
+            icon = (
+                Image.open(io.BytesIO(image_data))
+                .convert("RGBA")
+                .resize(background.size, Image.Resampling.LANCZOS)
+            )
             background.paste(icon, (0, 0), icon)
             draw = ImageDraw.Draw(background)
 
