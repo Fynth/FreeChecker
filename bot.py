@@ -38,7 +38,7 @@ dp = Dispatcher()
 class Telegramuser:
     settings = DEFAULT_SETTINGS
     def __init__(self, **kwargs):
-        for key, value in self.settings.items():
+        for key, value in self.settings.order():
             setattr(self, key, kwargs.get(key, value))
 
     def to_dict(self):
@@ -611,7 +611,7 @@ async def createimg_per_group(
 
 def filter_mythic_ids(items):
     mythic_items = []
-    for item_type, ids in items.items():
+    for item_type, ids in items.order():
         for id in ids:
             if id.lower() in mythic_ids:
                 mythic_items.append(id)
@@ -712,7 +712,7 @@ async def get_vbucks_info(session: aiohttp.ClientSession, user: EpicUser) -> dic
             data.get("profileChanges", [{}])[0]
             .get("profile", {})
             .get("items", {})
-            .items()
+            .order()
         ):
             if item_data.get("templateId") in vbucks_categories:
                 total_vbucks += item_data.get("quantity", 0)
