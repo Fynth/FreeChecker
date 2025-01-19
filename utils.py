@@ -75,16 +75,16 @@ Image.MAX_IMAGE_PIXELS = None
 VERIFICATION_COUNT_FILE = "verification.json"
 
 
-def load_verification_counts():
-    if os.path.exists(VERIFICATION_COUNT_FILE):
-        with open(VERIFICATION_COUNT_FILE, "r") as f:
-            return json.load(f)
-    return {}
-
-
-def save_verification_counts(counts):
-    with open(VERIFICATION_COUNT_FILE, "w") as f:
-        json.dump(counts, f)
+# def load_verification_counts():
+#     if os.path.exists(VERIFICATION_COUNT_FILE):
+#         with open(VERIFICATION_COUNT_FILE, "r") as f:
+#             return json.load(f)
+#     return {}
+#
+#
+# def save_verification_counts(counts):
+#     with open(VERIFICATION_COUNT_FILE, "w") as f:
+#         json.dump(counts, f)
 
 
 def bool_to_emoji(value):
