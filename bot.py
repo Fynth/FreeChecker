@@ -10,9 +10,7 @@ from aiogram.types import message
 from telegram import (
     Update,
 )
-from telegram.ext import (
-    CallbackContext
-)
+from telegram.ext import CallbackContext
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters.command import Command
 from utils import *
@@ -37,6 +35,7 @@ dp = Dispatcher()
 
 class Telegramuser:
     settings = DEFAULT_SETTINGS
+
     def __init__(self, **kwargs):
         for key, value in self.settings.order():
             setattr(self, key, kwargs.get(key, value))
@@ -49,6 +48,7 @@ class Telegramuser:
         # Создание объекта настроек из словаря
         return cls(**data)
 
+
 def get_or_create_user(user_id):
     user_data = collection.find_one({"user_id": user_id})
     if user_data:
@@ -58,8 +58,6 @@ def get_or_create_user(user_id):
         user = Telegramuser()
         collection.insert_one({"user_id": user_id, "settings": user.to_dict()})
         return user
-
-
 
 
 class EpicUser:
@@ -230,7 +228,6 @@ class EpicGenerator:
                 "rarity": data.get("rarity", "Common"),
                 "name": data.get("name", "Unknown"),
             }
-
 
 
 async def download_cosmetic_images(ids: list, max_concurrent: int = 10):
@@ -804,6 +801,7 @@ def create_season_messages(seasons_info):
 
     return messages
 
+
 @dp.message(Command("launch"))
 async def launch_task(message: types.Message):
     try:
@@ -821,24 +819,27 @@ async def launch_task(message: types.Message):
         launch_command = f'start /d "{path}" FortniteLauncher.exe -AUTH_LOGIN=unused -AUTH_PASSWORD={exchange_code} -AUTH_TYPE=exchangecode -epicapp=Fortnite -epicenv=Prod -EpicPortal -epicuserid={user.account_id}'
 
         keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(types.InlineKeyboardButton(text='Launch Game', callback_data='launch_game'))
+        keyboard.add(
+            types.InlineKeyboardButton(text="Launch Game", callback_data="launch_game")
+        )
         # await context.bot.send_message(
         #     chat_id=update.effective_chat.id,
         #     text=f"Скопируйте и вставьте следующую команду в окно CMD и нажмите Enter.: \n\n{launch_command}",
         # )
-        await message.answer('Press the button to launch the game.', reply_markup=keyboard)
-        await  message.answer('Launching the game...')
+        await message.answer(
+            "Press the button to launch the game.", reply_markup=keyboard
+        )
+        await message.answer("Launching the game...")
 
         try:
             subprocess.run(launch_command, shell=True, check=True)
-            await bot.send_message('Game launched successfully.')
+            await bot.send_message("Game launched successfully.")
         except subprocess.CalledProcessError as e:
-            await bot.send_message(f'Error launching the game: {e}')
+            await bot.send_message(f"Error launching the game: {e}")
         except Exception as e:
-            await bot.send_message(f'An error occurred: {e}')
+            await bot.send_message(f"An error occurred: {e}")
     except Exception as e:
-        await message.answer( text=f"Ошибка обработки запроса: {e}"
-        )
+        await message.answer(text=f"Ошибка обработки запроса: {e}")
 
 
 async def fetch_user_info(session, username):
@@ -953,9 +954,6 @@ async def delete_friends(session: aiohttp.ClientSession, user: EpicUser):
                 print(f"Error deleting friend {friend['accountId']} ({resp.status})")
 
 
-
-
-
 async def delete_friends_task(update: Update, context: CallbackContext):
     try:
         epic_generator = EpicGenerator()
@@ -996,6 +994,7 @@ async def help_task(update: Update, context: CallbackContext):
             chat_id=update.effective_chat.id, text=f"Error: {e}"
         )
 
+
 @dp.message(Command("login"))
 async def login_task(message: types.Message):
     try:
@@ -1026,8 +1025,7 @@ async def login_task(message: types.Message):
                         text="Ошибка получения информации (Аккаунт заблокирован)",
                     )
                 else:
-                    await message.answer( text=set_affiliate_response
-                    )
+                    await message.answer(text=set_affiliate_response)
                 return
 
             verification_counts = load_verification_counts()
@@ -1196,7 +1194,6 @@ async def login_task(message: types.Message):
         logger.error(f"Error in login_task: {e}")
 
 
-
 async def get_transaction_history_task(update: Update, context: CallbackContext):
     try:
         epic_generator = EpicGenerator()
@@ -1265,6 +1262,7 @@ def get_cosmetic_type(cosmetic_id):
     elif "spray" in cosmetic_id:
         return "Граффити"
 
+
 # @dp.message(Command("transaction"))
 # async def get_transaction_history_asyncio(update: Update, ):
 #     asyncio.create_task(get_transaction_history_task(update, context))
@@ -1273,8 +1271,10 @@ def get_cosmetic_type(cosmetic_id):
 # async def settings(update: Update, context: CallbackContext):
 #     asyncio.create_task(settings_task(update, context))
 
+
 async def main():
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

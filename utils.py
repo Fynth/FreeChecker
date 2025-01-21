@@ -21,21 +21,21 @@ directory_actual = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(directory_actual, "fonts", "font.ttf")
 
 DEFAULT_SETTINGS = {
-        'user_id': None,
-        'language': 'en',
-        'show_skins': True,
-        'show_backpacks': True,
-        'show_pickaxes': True,
-        'show_emotes': True,
-        'show_gliders': True,
-        'show_wraps': True,
-        'show_sprays': True,
-        'show_online_status': True,
-        'auto_delete_friends': False,
-        'auto_delete_foreign_accounts': False,
-        'auto_delete__archive_items': False,
-        'auto_close_profile': False,
-    }
+    "user_id": None,
+    "language": "en",
+    "show_skins": True,
+    "show_backpacks": True,
+    "show_pickaxes": True,
+    "show_emotes": True,
+    "show_gliders": True,
+    "show_wraps": True,
+    "show_sprays": True,
+    "show_online_status": True,
+    "auto_delete_friends": False,
+    "auto_delete_foreign_accounts": False,
+    "auto_delete__archive_items": False,
+    "auto_close_profile": False,
+}
 
 rarity_backgrounds = {
     "Common": os.path.join(current_dir, "backgrounds", "common.png"),
@@ -123,27 +123,27 @@ def mask_account_id(account_id):
     return masked_id
 
 
-idpattern = re.compile(r"athena(.*?):(.*?)_(.*?)")
+idpattern = re.compile(r"Athena(.*?):(.*?)_(.*)")
 
 current_dir = os.path.dirname(__file__)
-rarity_backgrounds = {
-    "Common": os.path.join(current_dir, "backgrounds", "common.png"),
-    "Uncommon": os.path.join(current_dir, "backgrounds", "uncommon.png"),
-    "Rare": os.path.join(current_dir, "backgrounds", "rare.png"),
-    "Epic": os.path.join(current_dir, "backgrounds", "epic.png"),
-    "Legendary": os.path.join(current_dir, "backgrounds", "legendary.png"),
-    "Mythic": os.path.join(current_dir, "backgrounds", "mythic.png"),
-    "Icon Series": os.path.join(current_dir, "backgrounds", "icon_series.png"),
-    "DARK SERIES": os.path.join(current_dir, "backgrounds", "dark.png"),
-    "Star Wars Series": os.path.join(current_dir, "backgrounds", "star_wars.png"),
-    "MARVEL SERIES": os.path.join(current_dir, "backgrounds", "marvel.png"),
-    "DC SERIES": os.path.join(current_dir, "backgrounds", "dc.png"),
-    "Gaming Legends Series": os.path.join(current_dir, "backgrounds", "gaming.png"),
-    "Shadow Series": os.path.join(current_dir, "backgrounds", "shadow.png"),
-    "Slurp Series": os.path.join(current_dir, "backgrounds", "slurp.png"),
-    "Lava Series": os.path.join(current_dir, "backgrounds", "lava.png"),
-    "Frozen Series": os.path.join(current_dir, "backgrounds", "frozen.png"),
-}
+# rarity_backgrounds = {
+#     "Common": os.path.join(current_dir, "backgrounds", "common.png"),
+#     "Uncommon": os.path.join(current_dir, "backgrounds", "uncommon.png"),
+#     "Rare": os.path.join(current_dir, "backgrounds", "rare.png"),
+#     "Epic": os.path.join(current_dir, "backgrounds", "epic.png"),
+#     "Legendary": os.path.join(current_dir, "backgrounds", "legendary.png"),
+#     "Mythic": os.path.join(current_dir, "backgrounds", "mythic.png"),
+#     "Icon Series": os.path.join(current_dir, "backgrounds", "icon_series.png"),
+#     "DARK SERIES": os.path.join(current_dir, "backgrounds", "dark.png"),
+#     "Star Wars Series": os.path.join(current_dir, "backgrounds", "star_wars.png"),
+#     "MARVEL SERIES": os.path.join(current_dir, "backgrounds", "marvel.png"),
+#     "DC SERIES": os.path.join(current_dir, "backgrounds", "dc.png"),
+#     "Gaming Legends Series": os.path.join(current_dir, "backgrounds", "gaming.png"),
+#     "Shadow Series": os.path.join(current_dir, "backgrounds", "shadow.png"),
+#     "Slurp Series": os.path.join(current_dir, "backgrounds", "slurp.png"),
+#     "Lava Series": os.path.join(current_dir, "backgrounds", "lava.png"),
+#     "Frozen Series": os.path.join(current_dir, "backgrounds", "frozen.png"),
+# }
 
 rarity_priority = {
     "Mythic": 1,

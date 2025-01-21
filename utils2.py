@@ -21,21 +21,41 @@ TOKEN = "7280187426:AAFoH-W21uUGi9X2CqAD09NIKutlY8cSha8"
 directory_actual = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(directory_actual, "fonts", "font.ttf")
 
-order = [
-    ("Скины", "skins_enabled"),
-    ("Рюкзаки", "backpacks_enabled"),
-    ("Кирки", "pickaxes_enabled"),
-    ("Эмоции", "emotes_enabled"),
-    ("Дельтапланы", "gliders_enabled"),
-    ("Обертки", "wrappers_enabled"),
-    ("Граффити", "banners_enabled"),
-]
+order = {
+    "Skins": "skins_enabled",
+    "Backpacks": "backpacks_enabled",
+    "Pickaxes": "pickaxes_enabled",
+    "Emotes": "emotes_enabled",
+    "Gliders": "gliders_enabled",
+    "Wraps": "wraps_enabled",
+    "Banners": "banners_enabled",
+    "Sprays": "sprays_enabled",
+}
+
+COSMETIC_PATTERNS = {
+    re.compile(r"character_|CID"): "Skins",
+    re.compile(r"BID_|backpack"): "Backpacks",
+    re.compile(
+        r"pickaxe_|pickaxe_id_|defaultpickaxe|halloweenScythe|happyPickaxe|sickleBatPickaxe|skiIcepickaxe|spikypickaxe"
+    ): "Pickaxes",
+    re.compile(r"EID|emoji"): "Emotes",
+    re.compile(
+        r"glider|founderumbrella|founderglider|solo_umbrella|umbrella"
+    ): "Gliders",
+    re.compile(r"wrap"): "Wraps",
+    re.compile(r"spray|SPID"): "Sprays",
+    re.compile(r"bannertoken"): "Banners",
+}
+
+idpattern = re.compile(r"Athena(.*?):(.*?)_(.*)")
+
 
 def init_db():
     conn = sqlite3.connect("telegram_users.sqlite")
     cursor = conn.cursor()
 
-    cursor.execute("""CREATE TABLE Users (
+    cursor.execute(
+        """CREATE TABLE Users (
             user_id INTEGER PRIMARY KEY AUTOINCREMENT,
             telegram_id INTEGER UNIQUE NOT NULL,
             username TEXT,
@@ -76,31 +96,34 @@ def init_db():
             pickaxes_enabled BOOLEAN DEFAULT 1,
             emotes_enabled BOOLEAN DEFAULT 1,
             gliders_enabled BOOLEAN DEFAULT 1,
-            wrappers_enabled BOOLEAN DEFAULT 1,
+            wraps_enabled BOOLEAN DEFAULT 1,
             banners_enabled BOOLEAN DEFAULT 1,
+            sprays_enabled BOOLEAN DEFAULT 1,
             all_items_enabled BOOLEAN DEFAULT 0,
             FOREIGN KEY (user_id) REFERENCES Users(user_id)
-        );""")
+        );"""
+    )
 
     conn.commit()
     return conn, cursor
 
+
 DEFAULT_SETTINGS = {
-        'user_id': None,
-        'language': 'en',
-        'show_skins': True,
-        'show_backpacks': True,
-        'show_pickaxes': True,
-        'show_emotes': True,
-        'show_gliders': True,
-        'show_wraps': True,
-        'show_sprays': True,
-        'show_online_status': True,
-        'auto_delete_friends': False,
-        'auto_delete_foreign_accounts': False,
-        'auto_delete__archive_items': False,
-        'auto_close_profile': False,
-    }
+    "user_id": None,
+    "language": "en",
+    "show_skins": True,
+    "show_backpacks": True,
+    "show_pickaxes": True,
+    "show_emotes": True,
+    "show_gliders": True,
+    "show_wraps": True,
+    "show_sprays": True,
+    "show_online_status": True,
+    "auto_delete_friends": False,
+    "auto_delete_foreign_accounts": False,
+    "auto_delete__archive_items": False,
+    "auto_close_profile": False,
+}
 
 rarity_backgrounds = {
     "Common": os.path.join(current_dir, "backgrounds", "common.png"),
@@ -188,7 +211,7 @@ def mask_account_id(account_id):
     return masked_id
 
 
-idpattern = re.compile(r"athena(.*?):(.*?)_(.*?)")
+idpattern = re.compile(r"Athena(.*?):(.*?)_(.*?)")
 
 current_dir = os.path.dirname(__file__)
 rarity_backgrounds = {
