@@ -28,8 +28,8 @@ order = {
     "Emotes": "emotes_enabled",
     "Gliders": "gliders_enabled",
     "Wraps": "wraps_enabled",
-    "Banners": "banners_enabled",
     "Sprays": "sprays_enabled",
+    "All items": "all_items_enabled",
 }
 
 COSMETIC_PATTERNS = {
@@ -44,7 +44,6 @@ COSMETIC_PATTERNS = {
     ): "Gliders",
     re.compile(r"wrap"): "Wraps",
     re.compile(r"spray|SPID"): "Sprays",
-    re.compile(r"bannertoken"): "Banners",
 }
 
 idpattern = re.compile(r"Athena(.*?):(.*?)_(.*)")

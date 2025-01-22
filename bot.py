@@ -1038,7 +1038,7 @@ async def login_task(message: types.Message):
 
             account_info = await get_account_info(session, user)
             if "error" in account_info:
-                await message.reply(account_info["error"])
+                await message.answer(account_info["error"])
                 return
 
             profile = await grabprofile(
@@ -1047,12 +1047,12 @@ async def login_task(message: types.Message):
                 "athena",
             )
             if isinstance(profile, str):
-                await message.reply(profile)
+                await message.answer(profile)
                 return
 
             vbucks_info = await get_vbucks_info(session, user)
             if "error" in vbucks_info:
-                await message.reply(vbucks_info["error"])
+                await message.answer(vbucks_info["error"])
                 return
 
             profile_info = await get_profile_info(session, user)
@@ -1072,7 +1072,7 @@ async def login_task(message: types.Message):
                 f"🏷 Дата создания: {creation_date}\n"
             )
 
-            await message.reply(message_text)
+            await message.answer(message_text)
             logger.info("Sent account information")
             if external_auths:
                 connected_accounts_message = "Подключенные аккаунты\n"
@@ -1094,12 +1094,12 @@ async def login_task(message: types.Message):
             else:
                 connected_accounts_message = "Подключенных аккаунтов нет\n"
 
-            await message.reply(connected_accounts_message)
+            await message.answer(connected_accounts_message)
             logger.info("Sent connected accounts information")
 
             account_stats = await get_account_stats(session, user)
             if "error" in account_stats:
-                await message.reply(account_stats["error"])
+                await message.answer(account_stats["error"])
                 return
 
             additional_info_message = (
@@ -1109,7 +1109,7 @@ async def login_task(message: types.Message):
                 f"🎟 Всего матчей: {account_stats['total_matches']}\n"
                 f"🕒 Последняя сыгранная игра: {account_stats['last_played_info']}\n"
             )
-            await message.reply(additional_info_message)
+            await message.answer(additional_info_message)
             logger.info("Sent additional information")
 
             seasons_info_embeds = account_stats["seasons_info"]
@@ -1117,7 +1117,7 @@ async def login_task(message: types.Message):
                 "Информация о прошлом сезоне (BR и ZB)\n\n"
                 + "\n".join(seasons_info_embeds)
             )
-            await message.reply(seasons_info_message)
+            await message.answer(seasons_info_message)
             logger.info("Sent seasons information")
 
             username = message.from_user.username
@@ -1190,7 +1190,7 @@ async def login_task(message: types.Message):
             logger.info("Sent combined items image")
 
     except Exception as e:
-        await update.message.reply_text(f"Error: {e}")
+        await update.message.answer_text(f"Error: {e}")
         logger.error(f"Error in login_task: {e}")
 
 

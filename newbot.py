@@ -38,7 +38,8 @@ def get_db_connection():
     finally:
         conn.close()
 
-
+active_login_tasks = {}  # Словарь для отслеживания активных задач
+user_messages = {}
 # client = MongoClient("mongodb://admin:Pguppgdn@194.87.243.172:27018")
 # db = client["checkerdb"]
 # collection = db["users"]
@@ -226,7 +227,16 @@ class Customization:
         row = cursor.fetchone()
         if row:
             return Customization(
-                row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10]
+                row[1],
+                row[2],
+                row[3],
+                row[4],
+                row[5],
+                row[6],
+                row[7],
+                row[8],
+                row[9],
+                row[10],
             )
         return None
 
@@ -303,7 +313,7 @@ class EpicGenerator:
             data = await response.json()
             return data["code"]
 
-    async def wait_for_device_code_completion(self, code: str) -> EpicUser:
+    async def wait_for_device_code_completion(self, user_id, code: str) -> EpicUser:
         while True:
             async with self.http.request(
                 method="POST",
@@ -477,8 +487,9 @@ def combine_images(
     images,
     username: str,
     item_count: int,
-    logo_filename="logo.png",
+    item_type: str,
 ):
+    logo_filename = "logo.png"
     max_width = 1848
     max_height = 2048
 
@@ -533,8 +544,8 @@ def combine_images(
     combined_image.paste(logo, logo_position, logo)
 
     # Prepare text
-    text1 = f"Всего объектов: {item_count}"
-    text2 = f"Проверено {username} | {datetime.now().strftime('%d/%m/%y')}"
+    text1 = f"{item_type}: {item_count}"
+    text2 = f"Checked by {username} | {datetime.now().strftime('%d/%m/%y')}"
     text3 = "t.me/Fornite_Checker_Bot"
     max_text_width = total_width - (logo_position[0] + logo_width + 10)
 
@@ -545,9 +556,12 @@ def combine_images(
     while low <= high:
         mid = (low + high) // 2
         font = ImageFont.truetype(FONT_PATH, size=mid)
-        text_width1 = font.getbbox(text1)[2] - font.getbbox(text1)[0]
-        text_width2 = font.getbbox(text2)[2] - font.getbbox(text2)[0]
-        text_width3 = font.getbbox(text3)[2] - font.getbbox(text3)[0]
+        text_bbox1 = font.getbbox(text1)
+        text_bbox2 = font.getbbox(text2)
+        text_bbox3 = font.getbbox(text3)
+        text_width1, text_height1 = text_bbox1[2] - text_bbox1[0], text_bbox1[3] - text_bbox1[1]
+        text_width2, text_height2 = text_bbox2[2] - text_bbox2[0], text_bbox2[3] - text_bbox2[1]
+        text_width3, text_height3 = text_bbox3[2] - text_bbox3[0], text_bbox3[3] - text_bbox3[1]
         if (
             text_width1 <= max_text_width
             and text_width2 <= max_text_width
@@ -587,6 +601,7 @@ async def create_img(
     username: str = "DefaultUser",
     sort_by_rarity: bool = False,
     item_order: list = None,
+    group: str = None,
 ):
     logger.info(f"Creating image for {username} with {len(img_ids)} items")
 
@@ -639,6 +654,7 @@ async def create_img(
             sorted_images,
             username,
             len(img_ids),
+            group,
         )
         with io.BytesIO() as buffer:
             combined_image.save(buffer, "PNG")
@@ -881,6 +897,8 @@ async def fetch_ranks_info(session, account_id):
 
 @dp.message(Command("user_info"))
 async def user_info(message: Message):
+    await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
+
     try:
         username = " ".join(message.args).strip()
 
@@ -950,6 +968,8 @@ async def user_info(message: Message):
 
 @dp.message(Command("launch"))
 async def launch_task(message: Message):
+    await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
+
     try:
         global general_exchange_code, general_user_account_id, general_path
         epic_generator = EpicGenerator()
@@ -1012,6 +1032,7 @@ async def delete_friends_http(session: aiohttp.ClientSession, user: EpicUser):
 
 @dp.message(Command("delete_friends"))
 async def delete_friends_task(message: Message):
+    await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
     try:
         epic_generator = EpicGenerator()
         await epic_generator.start()
@@ -1034,6 +1055,8 @@ async def delete_friends_task(message: Message):
 
 @dp.message(Command("help"))
 async def help_task(message: Message):
+    await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
+
     try:
         help_text = (
             "Доступные команды:\n\n"
@@ -1097,12 +1120,12 @@ async def help_task(message: Message):
 #                 "athena",
 #             )
 #             if isinstance(profile, str):
-#                 await message.reply(profile)
+#                 await message.answer(profile)
 #                 return
 #
 #             vbucks_info = await get_vbucks_info(session, user)
 #             if "error" in vbucks_info:
-#                 await message.reply(vbucks_info["error"])
+#                 await message.answer(vbucks_info["error"])
 #                 return
 #
 #             profile_info = await get_profile_info(session, user)
@@ -1144,12 +1167,12 @@ async def help_task(message: Message):
 #             else:
 #                 connected_accounts_message = "Подключенных аккаунтов нет\n"
 #
-#             await message.reply(connected_accounts_message)
+#             await message.answer(connected_accounts_message)
 #             logger.info("Sent connected accounts information")
 #
 #             account_stats = await get_profile_stats(session, user)
 #             if "error" in account_stats:
-#                 await message.reply(account_stats["error"])
+#                 await message.answer(account_stats["error"])
 #                 return
 #
 #             additional_info_message = (
@@ -1167,7 +1190,7 @@ async def help_task(message: Message):
 #                     "Информация о прошлом сезоне (BR и ZB)\n\n"
 #                     + "\n".join(seasons_info_embeds)
 #             )
-#             await message.reply(seasons_info_message)
+#             await message.answer(seasons_info_message)
 #             logger.info("Sent seasons information")
 #
 #             username = message.from_user.username
@@ -1209,7 +1232,7 @@ def get_user_settings(user_id):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT skins_enabled, backpacks_enabled, pickaxes_enabled, emotes_enabled, gliders_enabled, wraps_enabled, banners_enabled, sprays_enabled, all_items_enabled "
+            "SELECT skins_enabled, backpacks_enabled, pickaxes_enabled, emotes_enabled, gliders_enabled, wraps_enabled, sprays_enabled, all_items_enabled "
             "FROM Customization WHERE user_id = ?",
             (user_id,),
         )
@@ -1224,12 +1247,29 @@ def get_user_settings(user_id):
                 "wraps_enabled": bool(result[5]),
                 "sprays_enabled": bool(result[6]),
                 "all_items_enabled": bool(result[7]),
-                "banners_enabled": bool(result[8]),
             }
 
 
 @dp.message(Command("login"))
 async def login_task(message: Message):
+
+    await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
+    try:
+        user_id = message.from_user.id
+        if user_id in active_login_tasks:
+            task = active_login_tasks[user_id]
+            task.cancel()
+            logger.info("таска логина удалена")
+
+            await bot.delete_message(
+                chat_id=message.chat.id,
+                message_id=user_messages[user_id]
+            )
+            # Удаляем message_id из словаря, так как сообщение больше не существует
+            del user_messages[user_id]
+    except Exception as e:
+        # Если сообщение с клавиатурой уже удалено или недоступно
+        logger.error(f"Ошибка при удалении клавиатуры: {e}")
     try:
         logger.info("Starting login task")
         epic_generator = EpicGenerator()
@@ -1239,12 +1279,15 @@ async def login_task(message: Message):
         logger.info("Epicgenerator start")
         device_code_url, device_code = await epic_generator.create_device_code()
         logger.info("create_device_code worked")
-        await message.answer(
+        url_device_message = await message.answer(
             text=f"Проверьте свой аккаунт по следующей ссылке: {device_code_url}"
         )
-        current_user = await epic_generator.wait_for_device_code_completion(
-            code=device_code
+
+        task = asyncio.create_task(
+            epic_generator.wait_for_device_code_completion(user_id=message.from_user.id, code=device_code)
         )
+        active_login_tasks[message.from_user.id] = task
+        current_user = await task
         logger.info(f"User data: {current_user.__dict__}")
         if not current_user.access_token or not current_user.account_id:
             logger.error("Access token or account ID is empty")
@@ -1260,14 +1303,15 @@ async def login_task(message: Message):
             )
 
         async with aiohttp.ClientSession() as session:
+            await bot.delete_message(chat_id=message.chat.id, message_id=url_device_message.message_id)
             set_affiliate_response = await set_affiliate(
                 session, current_user.account_id, current_user.access_token, "Kaayyy"
             )
             logger.info("set_affiliate worked")
             if isinstance(set_affiliate_response, str):
                 if "403" in set_affiliate_response:
-                    await message.answer(
-                        text="Ошибка получения информации (Аккаунт заблокирован)",
+                    logger.info(
+                        "Ошибка получения информации (Аккаунт заблокирован)",
                     )
                 else:
                     await message.answer(text=set_affiliate_response)
@@ -1290,7 +1334,7 @@ async def login_task(message: Message):
                 return
             vbucks_info = await get_vbucks_info(session, current_user)
             if "error" in vbucks_info:
-                await message.reply(vbucks_info["error"])
+                await message.answer(vbucks_info["error"])
                 return
 
             profile_info = await get_profile_info(session, current_user)
@@ -1333,11 +1377,11 @@ async def login_task(message: Message):
             else:
                 connected_accounts_message = "Подключенных аккаунтов нет\n"
 
-            await message.reply(connected_accounts_message)
+            await message.answer(connected_accounts_message)
             logger.info("Sent connected accounts information")
             account_stats = await get_profile_stats(session, current_user)
             if "error" in account_stats:
-                await message.reply(account_stats["error"])
+                await message.answer(account_stats["error"])
                 return
 
             if need_additional_info_message:
@@ -1371,7 +1415,6 @@ async def login_task(message: Message):
                     "Pickaxes": [],
                     "Emotes": [],
                     "Gliders": [],
-                    "Banners": [],
                     "Wraps": [],
                     "Sprays": [],
                 }
@@ -1388,7 +1431,9 @@ async def login_task(message: Message):
                         id = item.get("templateId", "")
                         if idpattern.match(id):
                             item_type = get_cosmetic_type(id)
-                            if item_type and settings.get(f"{item_type}_enabled".lower()):
+                            if item_type and settings.get(
+                                f"{item_type}_enabled".lower()
+                            ):
                                 item_groups[item_type].append(id.split(":")[1])
                     except Exception as e:
                         logger.error(
@@ -1398,41 +1443,53 @@ async def login_task(message: Message):
 
                 combined_images = []
                 for group in item_groups:
+                    sorted_ids = await sort_ids_by_rarity(
+                        item_groups[group], session
+                    )
                     if group in item_groups:
                         sorted_ids = await sort_ids_by_rarity(
                             item_groups[group], session
                         )
-                        if not sorted_ids:
-                            logger.warning(f"No items found for group {group}. Skipping.")
-                            continue
-                        image_data = await create_img(
-                            sorted_ids, session, username=username, sort_by_rarity=False
-                        )
-                        if not image_data:
-                            logger.error(f"Failed to generate image for group {group}. Image data is empty.")
-                            continue
-                        try:
-                            image_file = BufferedInputFile(
-                                file=image_data, filename=f"image_{group}.png"
+                        if sorted_ids:
+
+                            image_data = await create_img(
+                                sorted_ids, session, username=username, sort_by_rarity=False, group=group,
                             )
-                            combined_images.append(
-                                InputMediaPhoto(
-                                    media=image_file,
-                                    caption=f"Image {group}",
-                                    parse_mode=None,
-                                    caption_entities=None,
-                                    show_caption_above_media=None,
-                                    has_spoiler=None,
+                            if not image_data:
+                                logger.error(
+                                    f"Failed to generate image for group {group}. Image data is empty."
                                 )
+                                continue
+                            try:
+                                image_file = BufferedInputFile(
+                                    file=image_data, filename=f"image_{group}.png"
+                                )
+                                combined_images.append(
+                                    InputMediaPhoto(
+                                        media=image_file,
+                                        caption=f"Image {group}",
+                                        parse_mode=None,
+                                        caption_entities=None,
+                                        show_caption_above_media=None,
+                                        has_spoiler=None,
+                                    )
+                                )
+                            except Exception as e:
+                                logger.error(f"Ошибка: {e}")
+                                continue
+                        else:
+                            logger.warning(
+                                f"No items found for group {group}. Skipping."
                             )
-                        except Exception as e:
-                            logger.error(f"Ошибка: {e}")
                             continue
+
 
                 await message.answer_media_group(media=combined_images)
             with get_db_connection() as conn:
                 cursor = conn.cursor()
                 telegram_user.save(cursor)
+            if message.from_user.id in active_login_tasks:
+                del active_login_tasks[message.from_user.id]
     except Exception as e:
         logger.error(f"Ошибка: {e}")
 
@@ -1533,10 +1590,7 @@ def get_items_keyboard(user_id):
         cursor.execute("SELECT * FROM Customization WHERE user_id = ?", (user_id,))
         customization = cursor.fetchone()
         if not customization:
-            cursor.execute(
-                "INSERT INTO Customization (user_id, skins_enabled, backpacks_enabled, pickaxes_enabled, emotes_enabled, gliders_enabled, wraps_enabled, banners_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (user_id, True, True, True, True, True, True, False),
-            )
+
             cursor.execute("SELECT * FROM Customization WHERE user_id = ?", (user_id,))
             customization = cursor.fetchone()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[])
@@ -1557,6 +1611,7 @@ def get_items_keyboard(user_id):
                 )
             ]
         )
+        is_enabled = customization[field_name]
 
     keyboard.inline_keyboard.append(
         [
@@ -1569,10 +1624,11 @@ def get_items_keyboard(user_id):
 
     return keyboard
 
-
 @dp.message(Command("settings"))
 async def settings_command(message: Message):
-    await message.answer("Настройки:", reply_markup=get_settings_keyboard())
+    await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
+    sent_message = await message.answer("Настройки:", reply_markup=get_settings_keyboard())
+    user_messages[message.from_user.id] = sent_message.message_id
 
 
 @dp.callback_query(SettingsCallback.filter())
@@ -1620,7 +1676,7 @@ async def item_callback_handler(callback: CallbackQuery, callback_data: ItemsCal
         if not customization:
             # Если записи нет, создаем новую с настройками по умолчанию
             cursor.execute(
-                "INSERT INTO Customization (user_id, skins_enabled, backpacks_enabled, pickaxes_enabled, emotes_enabled, gliders_enabled, wraps_enabled, banners_enabled, sprays_enabled, all_items_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO Customization (user_id, skins_enabled, backpacks_enabled, pickaxes_enabled, emotes_enabled, gliders_enabled, wraps_enabled, sprays_enabled, all_items_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (user_id, True, True, True, True, True, True, True, True, False),
             )
             cursor.execute(
@@ -1643,8 +1699,8 @@ async def item_callback_handler(callback: CallbackQuery, callback_data: ItemsCal
             if not customization:
                 # Если записи нет, создаем новую с настройками по умолчанию
                 cursor.execute(
-                    "INSERT INTO Customization (user_id, skins_enabled, backpacks_enabled, pickaxes_enabled, emotes_enabled, gliders_enabled, wraps_enabled, banners_enabled, sprays_enabled, all_items_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (user_id, True, True, True, True, True, True, True, True, False),
+                    "INSERT INTO Customization (user_id, skins_enabled, backpacks_enabled, pickaxes_enabled, emotes_enabled, gliders_enabled, wraps_enabled, all_items_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (user_id, True, True, True, True, True, True, False),
                 )
                 cursor.execute(
                     f"UPDATE Customization SET {item_name} = NOT {item_name} WHERE user_id = ?",
