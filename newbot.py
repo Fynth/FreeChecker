@@ -1428,7 +1428,10 @@ def get_items_keyboard(user_id, db_name, item_dict):
 
         # Создаем кнопку с текстом, отражающим текущее состояние
         button_text = f"{item_name} {'✅' if is_enabled else '❌'}"
-        keyboar       text=button_text,
+        keyboard.inline_keyboard.append(
+            [
+                InlineKeyboardButton(
+                    text=button_text,
                     callback_data=ItemsCallback(
                         action="toggle", item=field_name, db_name=db_name
                     ).pack(),
@@ -1510,9 +1513,6 @@ async def item_toggle_callback_handler(callback: CallbackQuery, callback_data: I
 
         # Отправляем уведомление об успешном изменении
         await callback.answer(f"Изменено на {'✅' if new_state else '❌'}!")
-d.inline_keyboard.append(
-            [
-                InlineKeyboardButton(
 
 
 async def main():
