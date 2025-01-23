@@ -1,7 +1,6 @@
 import math
 import platform
 import sys
-import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime
@@ -48,30 +47,6 @@ user_messages = {}
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-
-# class TelegramUser:
-#     settings = DEFAULT_SETTINGS
-#     def __init__(self, **kwargs):
-#         for key, value in self.settings.items():
-#             setattr(self, key, kwargs.get(key, value))
-#
-#     def to_dict(self):
-#         return {key: getattr(self, key) for key in self.settings}
-#
-#     @classmethod
-#     def from_dict(cls, data):
-#         # Создание объекта настроек из словаря
-#         return cls(**data)
-#
-# def get_or_create_user(user_id):
-#     user_data = collection.find_one({"user_id": user_id})
-#     if user_data:
-#         return TelegramUser.from_dict(user_data["settings"])
-#     else:
-#         # Создаем нового пользователя с настройками по умолчанию
-#         user = TelegramUser()
-#         collection.insert_one({"user_id": user_id, "settings": user.to_dict()})
-#         return user
 
 
 class TelegramUser:
@@ -678,18 +653,6 @@ async def sort_ids_by_rarity(ids: list, session: aiohttp.ClientSession) -> list:
     return sorted_ids
 
 
-# async def create_img_per_group(
-#     groups: dict, session: aiohttp.ClientSession, username: str
-# ) -> dict:
-#     images = {}
-#     for group, ids in groups.items():
-#         sorted_ids = await sort_ids_by_rarity(ids, session)
-#         image_data = (await create_img(
-#             sorted_ids, session, username=username, sort_by_rarity=True
-#         )).getvalue()
-#         images[group] = io.BytesIO(image_data)
-#     return images
-
 
 async def get_external_auths(session: aiohttp.ClientSession, user: EpicUser) -> dict:
     async with session.get(
@@ -1012,46 +975,43 @@ async def launch_task(message: Message):
         await message.answer(text=f"Ошибка обработки запроса: {e}")
 
 
-async def delete_friends_http(session: aiohttp.ClientSession, user: EpicUser):
-    async with session.get(
-        f"https://friends-public-service-prod.ol.epicgames.com/friends/api/public/friends/{user.account_id}",
-        headers={"Authorization": f"bearer {user.access_token}"},
-    ) as resp:
-        if resp.status != 200:
-            return f"Error fetching friends list ({resp.status})"
-        friends = await resp.json()
-
-    for friend in friends:
-        async with session.delete(
-            f"https://friends-public-service-prod.ol.epicgames.com/friends/api/public/friends/{user.account_id}/{friend['accountId']}",
-            headers={"Authorization": f"bearer {user.access_token}"},
-        ) as resp:
-            if resp.status != 204:
-                print(f"Error deleting friend {friend['accountId']} ({resp.status})")
-
-
-@dp.message(Command("delete_friends"))
-async def delete_friends_task(message: Message):
-    await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
-    try:
-        epic_generator = EpicGenerator()
-        await epic_generator.start()
-        device_code_url, device_code = await epic_generator.create_device_code()
-        await message.answer(
-            text=f"Пожалуйста, авторизуйте свою учетную запись, перейдя по следующей ссылке: {device_code_url}",
-        )
-
-        user = await epic_generator.wait_for_device_code_completion(device_code)
-
-        async with aiohttp.ClientSession() as session:
-            await delete_friends_http(session, user)
-
-        await message.answer(
-            text="All the friends who have been kicked from your Epic Games scene",
-        )
-    except Exception as e:
-        await message.answer(text=f"Error in request procedure")
-
+# async def delete_friends_http(session: aiohttp.ClientSession, user: EpicUser):
+#     async with session.get(
+#         f"https://friends-public-service-prod.ol.epicgames.com/friends/api/public/friends/{user.account_id}",
+#         headers={"Authorization": f"bearer {user.access_token}"},
+#     ) as resp:
+#         if resp.status != 200:
+#             return f"Error fetching friends list ({resp.status})"
+#         friends = await resp.json()
+#
+#     for friend in friends:
+#         async with session.delete(
+#             f"https://friends-public-service-prod.ol.epicgames.com/friends/api/public/friends/{user.account_id}/{friend['accountId']}",
+#             headers={"Authorization": f"bearer {user.access_token}"},
+#         ) as resp:
+#             if resp.status != 204:
+#                 print(f"Error deleting friend {friend['accountId']} ({resp.status})")
+#
+#
+# async def delete_friends(session):
+#     try:
+#         with session:
+#             async with session.get(
+#                     f"https://friends-public-service-prod.ol.epicgames.com/friends/api/public/friends/{user.account_id}",
+#                     headers={"Authorization": f"bearer {user.access_token}"},
+#             ) as resp:
+#                 if resp.status != 200:
+#                     return f"Error fetching friends list ({resp.status})"
+#                 friends = await resp.json()
+#             async with aiohttp.ClientSession() as session:
+#                 for friend in friends:
+#                     async with session.delete(
+#                             f"https://friends-public-service-prod.ol.epicgames.com/friends/api/public/friends/{user.account_id}/{friend['accountId']}",
+#                             headers={"Authorization": f"bearer {user.access_token}"},
+#                     ) as resp:
+#                         if resp.status != 204:
+#                             print(f"Error deleting friend {friend['accountId']} ({resp.status})")
+#     except Exception as e:
 
 @dp.message(Command("help"))
 async def help_task(message: Message):
@@ -1068,164 +1028,6 @@ async def help_task(message: Message):
         await message.answer(text=help_text)
     except Exception as e:
         await message.answer(text=f"Error: {e}")
-
-
-#
-# @dp.message(Command("login"))
-# async def login_task(message: Message):
-#     try:
-#         logger.info("Starting login task")
-#         epic_generator = EpicGenerator()
-#         await epic_generator.start()
-#         device_code_url, device_code = await epic_generator.create_device_code()
-#         await message.answer(text=f"Проверьте свой аккаунт по следующей ссылке: {device_code_url}")
-#         user = await epic_generator.wait_for_device_code_completion(code=device_code)
-#         logger.info(f"User data: {user.__dict__}")
-#         if not user.access_token or not user.account_id:
-#             logger.error("Access token or account ID is empty")
-#             await message.answer(
-#                 text="Ошибка: не удалось получить токен доступа или ID аккаунта.",
-#             )
-#             return
-#         async with aiohttp.ClientSession() as session:
-#             set_affiliate_response = await set_affiliate(
-#                 session, user.account_id, user.access_token, "Kaayyy"
-#             )
-#             if isinstance(set_affiliate_response, str):
-#                 if "403" in set_affiliate_response:
-#                     await message.answer(
-#                         text="Ошибка получения информации (Аккаунт заблокирован)",
-#                     )
-#                 else:
-#                     await message.answer(text=set_affiliate_response
-#                                          )
-#                 return
-#
-#             verification_counts = load_verification_counts()
-#             telegram_user_id = str(message.from_user.id)
-#             if telegram_user_id in verification_counts:
-#                 verification_counts[telegram_user_id] += 1
-#             else:
-#                 verification_counts[telegram_user_id] = 1
-#             save_verification_counts(verification_counts)
-#
-#             account_info = await get_account_info(session, user)
-#             if "error" in account_info:
-#                 await message.answer(account_info["error"])
-#                 return
-#
-#             profile = await get_profile(
-#                 session,
-#                 {"account_id": user.account_id, "access_token": user.access_token},
-#                 "athena",
-#             )
-#             if isinstance(profile, str):
-#                 await message.answer(profile)
-#                 return
-#
-#             vbucks_info = await get_vbucks_info(session, user)
-#             if "error" in vbucks_info:
-#                 await message.answer(vbucks_info["error"])
-#                 return
-#
-#             profile_info = await get_profile_info(session, user)
-#             creation_date = profile_info.get("creation_date", "Unknown")
-#             external_auths = account_info.get("externalAuths", [])
-#             message_text = (
-#                 f"Информация об аккаунте\n"
-#                 f"#️⃣ ID аккаунта: {mask_account_id(user.account_id)}\n"
-#                 f"📧 Почта: {account_info.get('email', 'Unknown')}\n"
-#                 f"🧑 Ник: {user.display_name}\n"
-#                 f"🔐 Электронная почта подтверждена: {bool_to_emoji(account_info.get('emailVerified', False))}\n"
-#                 f"👪 Родительский контроль: {bool_to_emoji(account_info.get('minorVerified', False))}\n"
-#                 f"🔒 Наличие двухфакторной аутентификации: {bool_to_emoji(account_info.get('tfaEnabled', False))}\n"
-#                 f"📛 Имя: {account_info.get('name', 'Unknown')}\n"
-#                 f"🌐 Страна: {account_info.get('country', 'Unknown')} {country_to_flag(account_info.get('country', ''))}\n"
-#                 f"💰 Кошелек: {vbucks_info.get('totalAmount', 0)}\n"
-#                 f"🏷 Дата создания: {creation_date}\n"
-#             )
-#
-#             await message.answer(message_text)
-#             if external_auths:
-#                 connected_accounts_message = "Подключенные аккаунты\n"
-#
-#                 for auth in external_auths:
-#                     auth_type = auth.get("type", "Неизвестно").lower()
-#                     display_name = auth.get("externalDisplayName", "Неизвестно")
-#                     external_id = auth.get("externalAuthId", "Неизвестно")
-#                     date_added = auth.get("dateAdded", "Неизвестно")
-#                     if date_added != "Неизвестно":
-#                         date_added = datetime.strptime(
-#                             date_added, "%Y-%m-%dT%H:%M:%S.%fZ"
-#                         ).strftime("%d/%m/%Y")
-#                     connected_accounts_message += (
-#                         f"{auth_type.upper()}\n"
-#                         f"{external_id}\n"
-#                         f"Имя: {display_name}\n"
-#                         f"Связан: {date_added}\n\n"
-#                     )
-#             else:
-#                 connected_accounts_message = "Подключенных аккаунтов нет\n"
-#
-#             await message.answer(connected_accounts_message)
-#             logger.info("Sent connected accounts information")
-#
-#             account_stats = await get_profile_stats(session, user)
-#             if "error" in account_stats:
-#                 await message.answer(account_stats["error"])
-#                 return
-#
-#             additional_info_message = (
-#                 f"Дополнительная информация (BR & ZB)\n"
-#                 f"🆔 Уровень аккаунта: {account_stats['account_level']}\n"
-#                 f"🏆 Всего побед: {account_stats['total_wins']}\n"
-#                 f"🎟 Всего матчей: {account_stats['total_matches']}\n"
-#                 f"🕒 Последняя сыгранная игра: {account_stats['last_played_info']}\n"
-#             )
-#             await message.answer(additional_info_message)
-#             logger.info("Sent additional information")
-#
-#             seasons_info_embeds = account_stats["seasons_info"]
-#             seasons_info_message = (
-#                     "Информация о прошлом сезоне (BR и ZB)\n\n"
-#                     + "\n".join(seasons_info_embeds)
-#             )
-#             await message.answer(seasons_info_message)
-#             logger.info("Sent seasons information")
-#
-#             username = message.from_user.username
-#             items = {}
-#             for item in profile["profileChanges"][0]["profile"]["items"].values():
-#                 id = item["templateId"].lower()
-#                 if idpattern.match(id):
-#                     item_type = get_cosmetic_type(id)
-#                     if item_type not in items:
-#                         items[item_type] = []
-#                     items[item_type].append(id.split(":")[1])
-#
-#             order = [
-#                 "Скины",
-#                 "Рюкзаки",
-#                 "Кирки",
-#                 "Эмоции",
-#                 "Дельтапланы",
-#                 "Обертки",
-#                 "Граффити",
-#             ]
-#             combined_images = []
-#             for group in order:
-#                 if group in items:
-#                     try:
-#                         sorted_ids = await sort_ids_by_rarity(items[group], session)
-#                         image_data = await create_img(sorted_ids, session, username=username, sort_by_rarity=False)
-#                         image_file = BufferedInputFile(file=image_data, filename=f"image_{group}.png")
-#                         combined_images.append(InputMediaPhoto(media=image_file, caption=f"Image {group}"))
-#                     except Exception as e:
-#                         logger.error(f"Ошибка: {e}")
-#             await message.answer_media_group(media=combined_images)
-#     except Exception as e:
-#         logger.error(f"Ошибка: {e}")
-
 
 def get_user_settings(user_id):
     logging.info(f"Вызов get_user_settings для user_id={user_id}")
@@ -1494,12 +1296,23 @@ async def login_task(message: Message):
         logger.error(f"Ошибка: {e}")
 
 
-# CallbackData для обработки нажатий на кнопки
+
+@dp.message(Command("settings"))
+async def settings_command(message: Message):
+    await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
+    sent_message = await message.answer("Настройки:", reply_markup=get_settings_keyboard())
+    user_messages[message.from_user.id] = sent_message.message_id
+
+
 class SettingsCallback(CallbackData, prefix="settings"):
-    action: str  # Действие (например, "customization", "automation")
-    setting: (
-        str  # Настройка (например, "skins", "additional_info", "autodelete_friends")
-    )
+    db_name: str  # Основное действие (navigate, toggle)
+    menu: str     # Текущее меню (main, customization, automation)
+    target: str   # Целевой раздел/настройка
+
+class CustomizationCallback(CallbackData, prefix="customization"):
+    db_name: str  # Основное действие (navigate, toggle)
+    menu: str     # Текущее меню (main, customization, automation)
+    target: str   # Целевой раздел/настройка
 
 
 def get_settings_keyboard():
@@ -1509,7 +1322,7 @@ def get_settings_keyboard():
                 InlineKeyboardButton(
                     text="Кастомизация",
                     callback_data=SettingsCallback(
-                        action="customization", setting="main"
+                        db_name="Customization", menu="settings", target="customization"
                     ).pack(),
                 )
             ],
@@ -1517,7 +1330,7 @@ def get_settings_keyboard():
                 InlineKeyboardButton(
                     text="Автоматизация",
                     callback_data=SettingsCallback(
-                        action="automation", setting="main"
+                        db_name="Automation", menu="settings", target="automation"
                     ).pack(),
                 )
             ],
@@ -1525,6 +1338,21 @@ def get_settings_keyboard():
     )
     return keyboard
 
+@dp.callback_query(SettingsCallback.filter())
+async def settings_callback_handler(
+    callback: CallbackQuery, callback_data: SettingsCallback
+):
+    target = callback_data.target
+    db_name = callback_data.db_name
+
+    if target == "customization":
+        await callback.message.edit_text(
+            "Кастомизация:", reply_markup=get_customization_keyboard()
+        )
+    elif target == "automation":
+        await callback.message.edit_text(
+            "Автоматизация:", reply_markup=get_items_keyboard(callback.from_user.id, db_name, automation)
+        )
 
 def get_customization_keyboard():
     keyboard = InlineKeyboardMarkup(
@@ -1532,155 +1360,115 @@ def get_customization_keyboard():
             [
                 InlineKeyboardButton(
                     text="Какие предметы чекать",
-                    callback_data=SettingsCallback(
-                        action="customization", setting="items"
+                    callback_data=CustomizationCallback(
+                        db_name="Customization", menu="customization", target="items_to_check"
                     ).pack(),
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="Дополнительная информация",
-                    callback_data=SettingsCallback(
-                        action="customization", setting="additional_info"
-                    ).pack(),
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Назад",
-                    callback_data=SettingsCallback(
-                        action="back", setting="main"
-                    ).pack(),
-                )
-            ],
-        ]
-    )
-    return keyboard
-
-
-# Клавиатура для раздела "Автоматизация"
-def get_automation_keyboard():
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Автоудаление друзей",
-                    callback_data=SettingsCallback(
-                        action="automation", setting="autodelete_friends"
+                    text="Дополнительные данные",
+                    callback_data=CustomizationCallback(
+                        db_name="Customization", menu="customization", target="additional_data"
                     ).pack(),
                 )
             ],
             [
                 InlineKeyboardButton(
                     text="Назад",
-                    callback_data=SettingsCallback(
-                        action="back", setting="automation"
+                    callback_data=CustomizationCallback(
+                        db_name="Customization", menu="customization", target="settings"
                     ).pack(),
                 )
             ],
         ]
     )
-
     return keyboard
 
-
-def get_items_keyboard(user_id):
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM Customization WHERE user_id = ?", (user_id,))
-        customization = cursor.fetchone()
-        if not customization:
-
-            cursor.execute("SELECT * FROM Customization WHERE user_id = ?", (user_id,))
-            customization = cursor.fetchone()
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[])
-
-    for item_name, field_name in order.items():
-        # Получаем текущее состояние (включено/выключено)
-        is_enabled = customization[field_name]
-
-        # Создаем кнопку с текстом, отражающим текущее состояние
-        button_text = f"{item_name} {'✅' if is_enabled else '❌'}"
-        keyboard.inline_keyboard.append(
-            [
-                InlineKeyboardButton(
-                    text=button_text,
-                    callback_data=ItemsCallback(
-                        action="toggle", item=field_name
-                    ).pack(),
-                )
-            ]
-        )
-        is_enabled = customization[field_name]
-
-    keyboard.inline_keyboard.append(
-        [
-            InlineKeyboardButton(
-                text="Назад",
-                callback_data=SettingsCallback(action="back", setting="main").pack(),
-            )
-        ]
-    )
-
-    return keyboard
-
-@dp.message(Command("settings"))
-async def settings_command(message: Message):
-    await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
-    sent_message = await message.answer("Настройки:", reply_markup=get_settings_keyboard())
-    user_messages[message.from_user.id] = sent_message.message_id
-
-
-@dp.callback_query(SettingsCallback.filter())
-async def settings_callback_handler(
-    callback: CallbackQuery, callback_data: SettingsCallback
+@dp.callback_query(CustomizationCallback.filter())
+async def customization_callback_handler(
+    callback: CallbackQuery, callback_data: CustomizationCallback
 ):
-    action = callback_data.action
-    setting = callback_data.setting
+    target = callback_data.target
 
-    if action == "customization":
-        if setting == "items":
-            await callback.message.edit_text(
-                "Какие предметы чекать:",
-                reply_markup=get_items_keyboard(callback.from_user.id),
-            )
-        else:
-            await callback.message.edit_text(
-                "Кастомизация:", reply_markup=get_customization_keyboard()
-            )
-    elif action == "automation":
+    if target == "items_to_check":
         await callback.message.edit_text(
-            "Автоматизация:", reply_markup=get_automation_keyboard()
+            "Какие предметы чекать:", reply_markup=get_items_keyboard(callback.from_user.id, "Customization", order)
         )
-    elif action == "back":
+    elif target == "additional_info":
+        await callback.message.edit_text(
+            "Дополнительные данные:", reply_markup=get_items_keyboard(callback.from_user.id, "Automation", order)
+        )
+    elif target == "settings":
         await callback.message.edit_text(
             "Настройки:", reply_markup=get_settings_keyboard()
         )
 
 
+
+
+
+def get_items_keyboard(user_id, db_name, item_dict):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT * FROM {db_name} WHERE user_id = ?", (user_id,))
+        table = cursor.fetchone()
+        if not table:
+            cursor.execute(
+                f"INSERT INTO {db_name} (user_id) VALUES (?)",
+                (user_id,),
+            )
+            conn.commit()
+            table = cursor.fetchone()
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[])
+
+    for item_name, field_name in item_dict.items():
+        # Получаем текущее состояние (включено/выключено)
+        is_enabled = table[field_name]
+
+        # Создаем кнопку с текстом, отражающим текущее состояние
+        button_text = f"{item_name} {'✅' if is_enabled else '❌'}"
+        keyboar       text=button_text,
+                    callback_data=ItemsCallback(
+                        action="toggle", item=field_name, db_name=db_name
+                    ).pack(),
+                )
+            ]
+        )
+
+    keyboard.inline_keyboard.append(
+        [
+            InlineKeyboardButton(
+                text="Назад",
+                callback_data=CustomizationCallback(action="back", setting="main").pack(),
+            )
+        ]
+    )
+
+    return keyboard
+
+
 class ItemsCallback(CallbackData, prefix="items"):
     action: str  # Действие (например, "toggle")
     item: str  # Категория предмета (например, "skins", "backpacks")
+    db_name: str
 
 
 @dp.callback_query(ItemsCallback.filter())
-async def item_callback_handler(callback: CallbackQuery, callback_data: ItemsCallback):
+async def item_toggle_callback_handler(callback: CallbackQuery, callback_data: ItemsCallback):
     user_id = callback.from_user.id
     item_name = callback_data.item
     action = callback_data.action
+    db_name = callback_data.db_name
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        customization = cursor.execute(
-            "SELECT * FROM Customization WHERE user_id = ?", (user_id,)
+        db_data = cursor.execute(
+            f"SELECT * FROM {db_name} WHERE user_id = ?", (user_id,)
         ).fetchone()
-        if not customization:
+        if not db_data:
             # Если записи нет, создаем новую с настройками по умолчанию
             cursor.execute(
-                "INSERT INTO Customization (user_id, skins_enabled, backpacks_enabled, pickaxes_enabled, emotes_enabled, gliders_enabled, wraps_enabled, sprays_enabled, all_items_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (user_id, True, True, True, True, True, True, True, True, False),
-            )
-            cursor.execute(
-                f"UPDATE Customization SET {item_name} = NOT {item_name} WHERE user_id = ?",
+                f"INSERT INTO {db_name} (user_id) VALUES (?)",
                 (user_id,),
             )
             conn.commit()
@@ -1690,38 +1478,41 @@ async def item_callback_handler(callback: CallbackQuery, callback_data: ItemsCal
             cursor = conn.cursor()
             # Обновляем значение в базе данных
             cursor.execute(
-                f"UPDATE Customization SET {item_name} = NOT {item_name} WHERE user_id = ?",
+                f"UPDATE {db_name} SET {item_name} = NOT {item_name} WHERE user_id = ?",
                 (user_id,),
             )
             customization = cursor.execute(
-                "SELECT * FROM Customization WHERE user_id = ?", (user_id,)
+                f"SELECT * FROM {db_name} WHERE user_id = ?", (user_id,)
             ).fetchone()
             if not customization:
                 # Если записи нет, создаем новую с настройками по умолчанию
                 cursor.execute(
-                    "INSERT INTO Customization (user_id, skins_enabled, backpacks_enabled, pickaxes_enabled, emotes_enabled, gliders_enabled, wraps_enabled, all_items_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (user_id, True, True, True, True, True, True, False),
+                    f"INSERT INTO {db_name} user_id = ?",
+                    (user_id,),
                 )
                 cursor.execute(
-                    f"UPDATE Customization SET {item_name} = NOT {item_name} WHERE user_id = ?",
+                    f"UPDATE {db_name} SET {item_name} = NOT {item_name} WHERE user_id = ?",
                     (user_id,),
                 )
             conn.commit()
 
             # Получаем обновленное состояние
             cursor.execute(
-                f"SELECT {item_name} FROM Customization WHERE user_id = ?", (user_id,)
+                f"SELECT {item_name} FROM {db_name} WHERE user_id = ?", (user_id,)
             )
 
             new_state = cursor.fetchone()
 
         # Обновляем клавиатуру только если состояние изменилось
         await callback.message.edit_reply_markup(
-            reply_markup=get_items_keyboard(user_id)
+            reply_markup=get_items_keyboard(user_id, db_name, automation)
         )
 
         # Отправляем уведомление об успешном изменении
         await callback.answer(f"Изменено на {'✅' if new_state else '❌'}!")
+d.inline_keyboard.append(
+            [
+                InlineKeyboardButton(
 
 
 async def main():

@@ -32,6 +32,11 @@ order = {
     "All items": "all_items_enabled",
 }
 
+automation = {
+    "Автоудаление друзей": "autodelete_friends",
+    "Автоудаление привязанных аккаунтов": "autodelete_external_auths",
+}
+
 COSMETIC_PATTERNS = {
     re.compile(r"character_|CID"): "Skins",
     re.compile(r"BID_|backpack"): "Backpacks",
