@@ -187,8 +187,8 @@ MENU_CONFIG = {
     "other": {
         "title": "⚙️ Автоматизация",
         "fields": {
-            "autodelete_friends": "Автоудаление друзей",
-            "autodelete_external_auths": "Автоудаление авторизаций",
+            "autodelete_friends": "Удалять друзей",
+            "autodelete_external_auths": "Отвязать внешние акки",
             # "fortnite_enabled": "Доступ к Fortnite",
             # "transaction_enabled": "Транзакции",
             # "my_username_enabled": "Мой username",
