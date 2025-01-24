@@ -6,7 +6,8 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Any
 
-from aiogram import Dispatcher, Bot
+from aiogram import Dispatcher, Bot, Router, F, types
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
 from aiogram.types import (
@@ -17,6 +18,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     CallbackQuery,
 )
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from utils2 import *
 
@@ -27,6 +29,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+router = Router()
 
 @contextmanager
 def get_db_connection():
@@ -46,18 +49,19 @@ user_messages = {}
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
+dp.include_router(router)
 
 
 
 class TelegramUser:
-    def __init__(self, telegram_id, username=None):
-        self.telegram_id = telegram_id
+    def __init__(self, user_id, username=None):
+        self.user_id = user_id
         self.username = username
 
     def save(self, cursor):
         # Проверяем, существует ли пользователь в базе данных
         cursor.execute(
-            "SELECT login_count FROM Users WHERE telegram_id = ?", (self.telegram_id,)
+            "SELECT login_count FROM Users WHERE user_id = ?", (self.user_id,)
         )
         row = cursor.fetchone()
 
@@ -65,19 +69,19 @@ class TelegramUser:
             # Если пользователь существует, увеличиваем login_count на 1
             new_login_count = row[0] + 1
             cursor.execute(
-                "UPDATE Users SET login_count = ? WHERE telegram_id = ?",
-                (new_login_count, self.telegram_id),
+                "UPDATE Users SET login_count = ? WHERE user_id = ?",
+                (new_login_count, self.user_id),
             )
         else:
             # Если пользователь не существует, создаем новую запись с login_count = 1
             cursor.execute(
-                "INSERT INTO Users (telegram_id, username, login_count) VALUES (?, ?, ?)",
-                (self.telegram_id, self.username, 1),
+                "INSERT INTO Users (user_id, username, login_count) VALUES (?, ?, ?)",
+                (self.user_id, self.username, 1),
             )
 
     @staticmethod
-    def get_by_telegram_id(cursor, telegram_id):
-        cursor.execute("SELECT * FROM Users WHERE telegram_id = ?", (telegram_id,))
+    def get_by_telegram_id(cursor, user_id):
+        cursor.execute("SELECT * FROM Users WHERE user_id = ?", (user_id,))
         row = cursor.fetchone()
         if row:
             return TelegramUser(row[1], row[2], row[3])
@@ -1035,7 +1039,7 @@ def get_user_settings(user_id):
         cursor = conn.cursor()
         cursor.execute(
             "SELECT skins_enabled, backpacks_enabled, pickaxes_enabled, emotes_enabled, gliders_enabled, wraps_enabled, sprays_enabled, all_items_enabled "
-            "FROM Customization WHERE user_id = ?",
+            "FROM users WHERE user_id = ?",
             (user_id,),
         )
         result = cursor.fetchone()
@@ -1100,7 +1104,7 @@ async def login_task(message: Message):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             need_additional_info_message = cursor.execute(
-                "SELECT need_additional_info_message FROM Settings WHERE user_id = ?",
+                "SELECT need_additional_info_message FROM users WHERE user_id = ?",
                 (message.from_user.id,),
             )
 
@@ -1245,9 +1249,6 @@ async def login_task(message: Message):
 
                 combined_images = []
                 for group in item_groups:
-                    sorted_ids = await sort_ids_by_rarity(
-                        item_groups[group], session
-                    )
                     if group in item_groups:
                         sorted_ids = await sort_ids_by_rarity(
                             item_groups[group], session
@@ -1296,223 +1297,145 @@ async def login_task(message: Message):
         logger.error(f"Ошибка: {e}")
 
 
-
-@dp.message(Command("settings"))
-async def settings_command(message: Message):
-    await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
-    sent_message = await message.answer("Настройки:", reply_markup=get_settings_keyboard())
-    user_messages[message.from_user.id] = sent_message.message_id
-
-
 class SettingsCallback(CallbackData, prefix="settings"):
-    db_name: str  # Основное действие (navigate, toggle)
-    menu: str     # Текущее меню (main, customization, automation)
-    target: str   # Целевой раздел/настройка
-
-class CustomizationCallback(CallbackData, prefix="customization"):
-    db_name: str  # Основное действие (navigate, toggle)
-    menu: str     # Текущее меню (main, customization, automation)
-    target: str   # Целевой раздел/настройка
-
-
-def get_settings_keyboard():
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Кастомизация",
-                    callback_data=SettingsCallback(
-                        db_name="Customization", menu="settings", target="customization"
-                    ).pack(),
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Автоматизация",
-                    callback_data=SettingsCallback(
-                        db_name="Automation", menu="settings", target="automation"
-                    ).pack(),
-                )
-            ],
-        ]
-    )
-    return keyboard
-
-@dp.callback_query(SettingsCallback.filter())
-async def settings_callback_handler(
-    callback: CallbackQuery, callback_data: SettingsCallback
-):
-    target = callback_data.target
-    db_name = callback_data.db_name
-
-    if target == "customization":
-        await callback.message.edit_text(
-            "Кастомизация:", reply_markup=get_customization_keyboard()
-        )
-    elif target == "automation":
-        await callback.message.edit_text(
-            "Автоматизация:", reply_markup=get_items_keyboard(callback.from_user.id, db_name, automation)
-        )
-
-def get_customization_keyboard():
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Какие предметы чекать",
-                    callback_data=CustomizationCallback(
-                        db_name="Customization", menu="customization", target="items_to_check"
-                    ).pack(),
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Дополнительные данные",
-                    callback_data=CustomizationCallback(
-                        db_name="Customization", menu="customization", target="additional_data"
-                    ).pack(),
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Назад",
-                    callback_data=CustomizationCallback(
-                        db_name="Customization", menu="customization", target="settings"
-                    ).pack(),
-                )
-            ],
-        ]
-    )
-    return keyboard
-
-@dp.callback_query(CustomizationCallback.filter())
-async def customization_callback_handler(
-    callback: CallbackQuery, callback_data: CustomizationCallback
-):
-    target = callback_data.target
-
-    if target == "items_to_check":
-        await callback.message.edit_text(
-            "Какие предметы чекать:", reply_markup=get_items_keyboard(callback.from_user.id, "Customization", order)
-        )
-    elif target == "additional_info":
-        await callback.message.edit_text(
-            "Дополнительные данные:", reply_markup=get_items_keyboard(callback.from_user.id, "Automation", order)
-        )
-    elif target == "settings":
-        await callback.message.edit_text(
-            "Настройки:", reply_markup=get_settings_keyboard()
-        )
-
-
-
-
-
-def get_items_keyboard(user_id, db_name, item_dict):
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(f"SELECT * FROM {db_name} WHERE user_id = ?", (user_id,))
-        table = cursor.fetchone()
-        if not table:
-            cursor.execute(
-                f"INSERT INTO {db_name} (user_id) VALUES (?)",
-                (user_id,),
-            )
-            conn.commit()
-            table = cursor.fetchone()
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[])
-
-    for item_name, field_name in item_dict.items():
-        # Получаем текущее состояние (включено/выключено)
-        is_enabled = table[field_name]
-
-        # Создаем кнопку с текстом, отражающим текущее состояние
-        button_text = f"{item_name} {'✅' if is_enabled else '❌'}"
-        keyboard.inline_keyboard.append(
-            [
-                InlineKeyboardButton(
-                    text=button_text,
-                    callback_data=ItemsCallback(
-                        action="toggle", item=field_name, db_name=db_name
-                    ).pack(),
-                )
-            ]
-        )
-
-    keyboard.inline_keyboard.append(
-        [
-            InlineKeyboardButton(
-                text="Назад",
-                callback_data=CustomizationCallback(action="back", setting="main").pack(),
-            )
-        ]
-    )
-
-    return keyboard
+    menu: str
+    action: str
+    section: str
 
 
 class ItemsCallback(CallbackData, prefix="items"):
-    action: str  # Действие (например, "toggle")
-    item: str  # Категория предмета (например, "skins", "backpacks")
-    db_name: str
+    menu: str
+    action: str
+    field: str
 
 
-@dp.callback_query(ItemsCallback.filter())
-async def item_toggle_callback_handler(callback: CallbackQuery, callback_data: ItemsCallback):
-    user_id = callback.from_user.id
-    item_name = callback_data.item
-    action = callback_data.action
-    db_name = callback_data.db_name
+def build_keyboard(menu_name: str, user_id: int) -> InlineKeyboardMarkup:
+    menu = MENU_CONFIG[menu_name]
+    builder = InlineKeyboardBuilder()
+
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        db_data = cursor.execute(
-            f"SELECT * FROM {db_name} WHERE user_id = ?", (user_id,)
-        ).fetchone()
-        if not db_data:
-            # Если записи нет, создаем новую с настройками по умолчанию
-            cursor.execute(
-                f"INSERT INTO {db_name} (user_id) VALUES (?)",
-                (user_id,),
-            )
-            conn.commit()
+        user = conn.execute('''SELECT * FROM users 
+                            WHERE user_id = ?''', (user_id,)).fetchone()
 
-    if action == "toggle":
+        # Если пользователя нет - создаем
+        if not user:
+            conn.execute('''INSERT INTO users (user_id) 
+                         VALUES (?)''', (user_id,))
+            conn.commit()
+            user = conn.execute('''SELECT * FROM users 
+                                WHERE user_id = ?''', (user_id,)).fetchone()
+
+        # Добавляем переключатели для полей
+        if "fields" in menu:
+            for field, label in menu["fields"].items():
+                # Получаем значение из БД (индекс поля + 1, так как user_id первый)
+                status = "✅" if user[field] else "❌"
+
+                builder.button(
+                    text=f"{label} {status}",
+                    callback_data=ItemsCallback(
+                        menu=menu_name,
+                        action="toggle",
+                        field=field
+                    ).pack()
+                )
+
+        # Добавляем кнопки навигации
+        if "buttons" in menu:
+            for btn in menu["buttons"]:
+                builder.button(
+                    text=btn["text"],
+                    callback_data=SettingsCallback(
+                        menu=menu_name,
+                        action="navigate",
+                        section=btn["menu"]
+                    ).pack()
+                )
+
+        # Добавляем кнопку "Назад"
+        if "back" in menu:
+            builder.button(
+                text="🔙 Назад",
+                callback_data=SettingsCallback(
+                    menu=menu_name,
+                    action="navigate",
+                    section=menu["back"]
+                ).pack()
+            )
+
+    # Оптимизируем расположение кнопок
+    builder.adjust(2, repeat=True)
+    return builder.as_markup()
+
+
+@router.message(Command("settings"))
+async def cmd_settings(message: types.Message):
+    await message.delete()
+    sent = await message.answer(
+        text=MENU_CONFIG["main"]["title"],
+        reply_markup=build_keyboard("main", message.from_user.id)
+    )
+    # Сохраняем ID сообщения для последующего обновления
+    user_messages[message.from_user.id] = sent.message_id
+
+
+@router.callback_query(SettingsCallback.filter(F.action == "navigate"))
+async def handle_navigation(callback: types.CallbackQuery, callback_data: SettingsCallback):
+    await callback.answer()
+    await callback.message.edit_text(
+        text=MENU_CONFIG[callback_data.section]["title"],
+        reply_markup=build_keyboard(callback_data.section, callback.from_user.id)
+    )
+
+
+@router.callback_query(ItemsCallback.filter(F.action == "toggle"))
+async def handle_toggle(callback: CallbackQuery, callback_data: ItemsCallback):
+    try:
+        user_id = callback.from_user.id
+        field = callback_data.field
+
         with get_db_connection() as conn:
-            cursor = conn.cursor()
-            # Обновляем значение в базе данных
-            cursor.execute(
-                f"UPDATE {db_name} SET {item_name} = NOT {item_name} WHERE user_id = ?",
-                (user_id,),
+            # Получаем текущее состояние
+            current_state = conn.execute(
+                f"SELECT {field} FROM users WHERE user_id = ?",
+                (user_id,)
+            ).fetchone()[0]
+
+            # Вычисляем новое состояние
+            new_state = 0 if current_state else 1
+
+            # Обновляем только если состояние изменится
+            conn.execute(
+                f"UPDATE users SET {field} = ? WHERE user_id = ?",
+                (new_state, user_id)
             )
-            customization = cursor.execute(
-                f"SELECT * FROM {db_name} WHERE user_id = ?", (user_id,)
-            ).fetchone()
-            if not customization:
-                # Если записи нет, создаем новую с настройками по умолчанию
-                cursor.execute(
-                    f"INSERT INTO {db_name} user_id = ?",
-                    (user_id,),
-                )
-                cursor.execute(
-                    f"UPDATE {db_name} SET {item_name} = NOT {item_name} WHERE user_id = ?",
-                    (user_id,),
-                )
             conn.commit()
 
-            # Получаем обновленное состояние
-            cursor.execute(
-                f"SELECT {item_name} FROM {db_name} WHERE user_id = ?", (user_id,)
-            )
+            # Проверяем реальное изменение
+            updated_state = conn.execute(
+                f"SELECT {field} FROM users WHERE user_id = ?",
+                (user_id,)
+            ).fetchone()[0]
 
-            new_state = cursor.fetchone()
+            if current_state == updated_state:
+                await callback.answer("ℹ️ Состояние не изменилось")
+                return
 
-        # Обновляем клавиатуру только если состояние изменилось
-        await callback.message.edit_reply_markup(
-            reply_markup=get_items_keyboard(user_id, db_name, automation)
-        )
+        # Обновляем клавиатуру
+        new_keyboard = build_keyboard(callback_data.menu, user_id)
+        await callback.message.edit_reply_markup(reply_markup=new_keyboard)
+        await callback.answer("⚙️ Настройка обновлена!")
 
-        # Отправляем уведомление об успешном изменении
-        await callback.answer(f"Изменено на {'✅' if new_state else '❌'}!")
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            await callback.answer("ℹ️ Состояние не изменилось")
+        else:
+            logger.error(f"Telegram error: {e}")
+            await callback.answer("⚠️ Ошибка обновления")
+
+    except Exception as e:
+        logger.error(f"Toggle error: {e}")
+        await callback.answer("⚠️ Ошибка обновления")
 
 
 async def main():

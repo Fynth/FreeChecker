@@ -61,7 +61,7 @@ def init_db():
     cursor.execute(
         """CREATE TABLE Users (
             user_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            telegram_id INTEGER UNIQUE NOT NULL,
+            user_id INTEGER UNIQUE NOT NULL,
             username TEXT,
             login_count INTEGER DEFAULT 0
         );
@@ -161,6 +161,44 @@ special_rarities = {
     "FROZEN SERIES",
 }
 
+
+MENU_CONFIG = {
+    "main": {
+        "title": "⚙️ Главное меню настроек",
+        "buttons": [
+            {"text": "🖼 Настройки отображения", "menu": "items"},
+            {"text": "⚙️ Автоматизация", "menu": "other"}
+        ],
+    },
+    "items": {
+        "title": "🖼 Настройки предметов",
+        "fields": {
+            "skins_enabled": "Скины",
+            "backpacks_enabled": "Рюкзаки",
+            "pickaxes_enabled": "Кирки",
+            "emotes_enabled": "Эмоции",
+            "gliders_enabled": "Дельтапланы",
+            "wraps_enabled": "Обертки",
+            "sprays_enabled": "Спреи",
+            "all_items_enabled": "Все предметы",
+        },
+        "back": "main"
+    },
+    "other": {
+        "title": "⚙️ Автоматизация",
+        "fields": {
+            "autodelete_friends": "Автоудаление друзей",
+            "autodelete_external_auths": "Автоудаление авторизаций",
+            # "fortnite_enabled": "Доступ к Fortnite",
+            # "transaction_enabled": "Транзакции",
+            # "my_username_enabled": "Мой username",
+            # "bot_username_enabled": "Username бота",
+            # "logo_enabled": "Логотип",
+            # "need_additional_info_message": "Запрос доп. информации"
+        },
+        "back": "main"
+    }
+}
 
 Image.MAX_IMAGE_PIXELS = None
 
