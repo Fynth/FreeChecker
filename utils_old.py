@@ -3,7 +3,6 @@ import io
 import json
 import logging
 import re
-import sqlite3
 
 import aiohttp
 import asyncio
@@ -20,97 +19,6 @@ current_dir = os.path.dirname(__file__)
 TOKEN = "7280187426:AAFoH-W21uUGi9X2CqAD09NIKutlY8cSha8"
 directory_actual = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(directory_actual, "fonts", "font.ttf")
-
-order = {
-    "Skins": "skins_enabled",
-    "Backpacks": "backpacks_enabled",
-    "Pickaxes": "pickaxes_enabled",
-    "Emotes": "emotes_enabled",
-    "Gliders": "gliders_enabled",
-    "Wraps": "wraps_enabled",
-    "Sprays": "sprays_enabled",
-    "All items": "all_items_enabled",
-}
-
-automation = {
-    "Автоудаление друзей": "autodelete_friends",
-    "Автоудаление привязанных аккаунтов": "autodelete_external_auths",
-}
-
-COSMETIC_PATTERNS = {
-    re.compile(r"character_|CID"): "Skins",
-    re.compile(r"BID_|backpack"): "Backpacks",
-    re.compile(
-        r"pickaxe_|pickaxe_id_|defaultpickaxe|halloweenScythe|happyPickaxe|sickleBatPickaxe|skiIcepickaxe|spikypickaxe"
-    ): "Pickaxes",
-    re.compile(r"EID|emoji"): "Emotes",
-    re.compile(
-        r"glider|founderumbrella|founderglider|solo_umbrella|umbrella"
-    ): "Gliders",
-    re.compile(r"wrap"): "Wraps",
-    re.compile(r"spray|SPID"): "Sprays",
-}
-
-idpattern = re.compile(r"Athena(.*?):(.*?)_(.*)")
-
-
-def init_db():
-    conn = sqlite3.connect("telegram_users.sqlite")
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """CREATE TABLE Users (
-            user_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            telegram_id INTEGER UNIQUE NOT NULL,
-            username TEXT,
-            login_count INTEGER DEFAULT 0
-        );
-        
-        CREATE TABLE Settings (
-            setting_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            fortnite_enabled BOOLEAN DEFAULT 1,
-            transaction_enabled BOOLEAN DEFAULT 0,
-            autodelete_friends BOOLEAN DEFAULT 0,
-            autodelete_external_auths BOOLEAN DEFAULT 0,
-            my_username_enabled BOOLEAN DEFAULT 1,
-            bot_username_enabled BOOLEAN DEFAULT 1,
-            logo_enabled BOOLEAN DEFAULT 1,
-            FOREIGN KEY (user_id) REFERENCES Users(user_id)
-        );
-        
-        CREATE TABLE Commands (
-            command_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            command_name TEXT UNIQUE NOT NULL,
-            command_type TEXT NOT NULL
-        );
-        
-        CREATE TABLE Logins (
-            login_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            login_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES Users(user_id)
-        );
-        
-        CREATE TABLE Customization (
-            customization_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            skins_enabled BOOLEAN DEFAULT 1,
-            backpacks_enabled BOOLEAN DEFAULT 1,
-            pickaxes_enabled BOOLEAN DEFAULT 1,
-            emotes_enabled BOOLEAN DEFAULT 1,
-            gliders_enabled BOOLEAN DEFAULT 1,
-            wraps_enabled BOOLEAN DEFAULT 1,
-            banners_enabled BOOLEAN DEFAULT 1,
-            sprays_enabled BOOLEAN DEFAULT 1,
-            all_items_enabled BOOLEAN DEFAULT 0,
-            FOREIGN KEY (user_id) REFERENCES Users(user_id)
-        );"""
-    )
-
-    conn.commit()
-    return conn, cursor
-
 
 DEFAULT_SETTINGS = {
     "user_id": None,
@@ -167,16 +75,16 @@ Image.MAX_IMAGE_PIXELS = None
 VERIFICATION_COUNT_FILE = "verification.json"
 
 
-def load_verification_counts():
-    if os.path.exists(VERIFICATION_COUNT_FILE):
-        with open(VERIFICATION_COUNT_FILE, "r") as f:
-            return json.load(f)
-    return {}
-
-
-def save_verification_counts(counts):
-    with open(VERIFICATION_COUNT_FILE, "w") as f:
-        json.dump(counts, f)
+# def load_verification_counts():
+#     if os.path.exists(VERIFICATION_COUNT_FILE):
+#         with open(VERIFICATION_COUNT_FILE, "r") as f:
+#             return json.load(f)
+#     return {}
+#
+#
+# def save_verification_counts(counts):
+#     with open(VERIFICATION_COUNT_FILE, "w") as f:
+#         json.dump(counts, f)
 
 
 def bool_to_emoji(value):
@@ -215,27 +123,27 @@ def mask_account_id(account_id):
     return masked_id
 
 
-idpattern = re.compile(r"Athena(.*?):(.*?)_(.*?)")
+idpattern = re.compile(r"Athena(.*?):(.*?)_(.*)")
 
 current_dir = os.path.dirname(__file__)
-rarity_backgrounds = {
-    "Common": os.path.join(current_dir, "backgrounds", "common.png"),
-    "Uncommon": os.path.join(current_dir, "backgrounds", "uncommon.png"),
-    "Rare": os.path.join(current_dir, "backgrounds", "rare.png"),
-    "Epic": os.path.join(current_dir, "backgrounds", "epic.png"),
-    "Legendary": os.path.join(current_dir, "backgrounds", "legendary.png"),
-    "Mythic": os.path.join(current_dir, "backgrounds", "mythic.png"),
-    "Icon Series": os.path.join(current_dir, "backgrounds", "icon_series.png"),
-    "DARK SERIES": os.path.join(current_dir, "backgrounds", "dark.png"),
-    "Star Wars Series": os.path.join(current_dir, "backgrounds", "star_wars.png"),
-    "MARVEL SERIES": os.path.join(current_dir, "backgrounds", "marvel.png"),
-    "DC SERIES": os.path.join(current_dir, "backgrounds", "dc.png"),
-    "Gaming Legends Series": os.path.join(current_dir, "backgrounds", "gaming.png"),
-    "Shadow Series": os.path.join(current_dir, "backgrounds", "shadow.png"),
-    "Slurp Series": os.path.join(current_dir, "backgrounds", "slurp.png"),
-    "Lava Series": os.path.join(current_dir, "backgrounds", "lava.png"),
-    "Frozen Series": os.path.join(current_dir, "backgrounds", "frozen.png"),
-}
+# rarity_backgrounds = {
+#     "Common": os.path.join(current_dir, "backgrounds", "common.png"),
+#     "Uncommon": os.path.join(current_dir, "backgrounds", "uncommon.png"),
+#     "Rare": os.path.join(current_dir, "backgrounds", "rare.png"),
+#     "Epic": os.path.join(current_dir, "backgrounds", "epic.png"),
+#     "Legendary": os.path.join(current_dir, "backgrounds", "legendary.png"),
+#     "Mythic": os.path.join(current_dir, "backgrounds", "mythic.png"),
+#     "Icon Series": os.path.join(current_dir, "backgrounds", "icon_series.png"),
+#     "DARK SERIES": os.path.join(current_dir, "backgrounds", "dark.png"),
+#     "Star Wars Series": os.path.join(current_dir, "backgrounds", "star_wars.png"),
+#     "MARVEL SERIES": os.path.join(current_dir, "backgrounds", "marvel.png"),
+#     "DC SERIES": os.path.join(current_dir, "backgrounds", "dc.png"),
+#     "Gaming Legends Series": os.path.join(current_dir, "backgrounds", "gaming.png"),
+#     "Shadow Series": os.path.join(current_dir, "backgrounds", "shadow.png"),
+#     "Slurp Series": os.path.join(current_dir, "backgrounds", "slurp.png"),
+#     "Lava Series": os.path.join(current_dir, "backgrounds", "lava.png"),
+#     "Frozen Series": os.path.join(current_dir, "backgrounds", "frozen.png"),
+# }
 
 rarity_priority = {
     "Mythic": 1,

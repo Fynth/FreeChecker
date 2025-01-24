@@ -6,19 +6,18 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Any
 
-from aiogram import Dispatcher, Bot
+from aiogram import Dispatcher, Bot, Router
 from aiogram.filters import Command
-from aiogram.filters.callback_data import CallbackData
 from aiogram.types import (
     Message,
     InputMediaPhoto,
     BufferedInputFile,
-    InlineKeyboardButton,
     InlineKeyboardMarkup,
     CallbackQuery,
 )
 
-from utils2 import *
+from utils import *
+from keyboard import *
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -26,7 +25,7 @@ logging.basicConfig(
 
 
 logger = logging.getLogger(__name__)
-
+router = Router()
 
 @contextmanager
 def get_db_connection():
@@ -65,7 +64,7 @@ class TelegramUser:
             # Если пользователь существует, увеличиваем login_count на 1
             new_login_count = row[0] + 1
             cursor.execute(
-                "UPDATE Users SET login_count = ? WHERE telegram_id = ?",
+                "UPDATE users SET login_count = ? WHERE telegram_id = ?",
                 (new_login_count, self.telegram_id),
             )
         else:
@@ -75,311 +74,9 @@ class TelegramUser:
                 (self.telegram_id, self.username, 1),
             )
 
-    @staticmethod
-    def get_by_telegram_id(cursor, telegram_id):
-        cursor.execute("SELECT * FROM Users WHERE telegram_id = ?", (telegram_id,))
-        row = cursor.fetchone()
-        if row:
-            return TelegramUser(row[1], row[2], row[3])
-        return None
-
-
-class Settings:
-    def __init__(
-        self,
-        user_id,
-        fortnite_enabled=False,
-        transaction_enabled=False,
-        autodelete_friends=False,
-        autodelete_external_auths=False,
-        my_username_enabled=False,
-        bot_username_enabled=False,
-        logo_enabled=False,
-    ):
-        self.user_id = user_id
-        self.fortnite_enabled = fortnite_enabled
-        self.transaction_enabled = transaction_enabled
-        self.autodelete_friends = autodelete_friends
-        self.autodelete_external_auths = autodelete_external_auths
-        self.my_username_enabled = my_username_enabled
-        self.bot_username_enabled = bot_username_enabled
-        self.logo_enabled = logo_enabled
-
-    def save(self, cursor):
-        cursor.execute(
-            "INSERT OR REPLACE INTO Settings (user_id, fortnite_enabled, transaction_enabled, autodelete_friends, autodelete_external_auths, my_username_enabled, bot_username_enabled, logo_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                self.user_id,
-                self.fortnite_enabled,
-                self.transaction_enabled,
-                self.autodelete_friends,
-                self.autodelete_external_auths,
-                self.my_username_enabled,
-                self.bot_username_enabled,
-                self.logo_enabled,
-            ),
-        )
-
-    @staticmethod
-    def get_by_user_id(cursor, user_id):
-        cursor.execute("SELECT * FROM Settings WHERE user_id = ?", (user_id,))
-        row = cursor.fetchone()
-        if row:
-            return Settings(
-                row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8]
-            )
-        return None
-
-
-class Login:
-    def __init__(self, user_id, login_time=datetime.now()):
-        self.user_id = user_id
-        self.login_time = login_time
-
-    def save(self, cursor):
-        cursor.execute(
-            "INSERT INTO Logins (user_id, login_time) VALUES (?, ?)",
-            (self.user_id, self.login_time),
-        )
-
-    @staticmethod
-    def get_by_user_id(cursor, user_id):
-        cursor.execute("SELECT * FROM Logins WHERE user_id = ?", (user_id,))
-        rows = cursor.fetchall()
-        return [Login(row[1], row[2]) for row in rows]
-
-    @staticmethod
-    def get_count_by_user_id(cursor, user_id):
-        cursor.execute("SELECT * FROM Logins WHERE user_id = ?", (user_id,))
-        rows = cursor.fetchall()
-        return [Login(row[1], row[2]) for row in rows]
-
-
-class Customization:
-    def __init__(
-        self,
-        user_id,
-        skins_enabled=True,
-        backpacks_enabled=True,
-        pickaxes_enabled=True,
-        emotes_enabled=True,
-        gliders_enabled=True,
-        wraps_enabled=True,
-        sprays_enabled=True,
-        banners_enabled=True,
-        all_items_enabled=False,
-    ):
-        self.user_id = user_id
-        self.skins_enabled = skins_enabled
-        self.backpacks_enabled = backpacks_enabled
-        self.pickaxes_enabled = pickaxes_enabled
-        self.emotes_enabled = emotes_enabled
-        self.gliders_enabled = gliders_enabled
-        self.wraps_enabled = wraps_enabled
-        self.sprays_enabled = sprays_enabled
-        self.banners_enabled = banners_enabled
-        self.all_items_enabled = all_items_enabled
-
-    def save(self, cursor):
-        cursor.execute(
-            "INSERT OR REPLACE INTO Customization (user_id, skins_enabled, backpacks_enabled, pickaxes_enabled, emotes_enabled, gliders_enabled, wraps_enabled, banners_enabled, all_items_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                self.user_id,
-                self.skins_enabled,
-                self.backpacks_enabled,
-                self.pickaxes_enabled,
-                self.emotes_enabled,
-                self.gliders_enabled,
-                self.wraps_enabled,
-                self.banners_enabled,
-                self.all_items_enabled,
-            ),
-        )
-
-    @staticmethod
-    def get_by_user_id(cursor, user_id):
-        cursor.execute("SELECT * FROM Customization WHERE user_id = ?", (user_id,))
-        row = cursor.fetchone()
-        if row:
-            return Customization(
-                row[1],
-                row[2],
-                row[3],
-                row[4],
-                row[5],
-                row[6],
-                row[7],
-                row[8],
-                row[9],
-                row[10],
-            )
-        return None
-
 
 class EpicUser:
-    def __init__(self, data=None):
-        self.raw = data
-        self.access_token = data.get("access_token", "")
-        self.expires_in = data.get("expires_in", 0)
-        self.expires_at = data.get("expires_at", "")
-        self.token_type = data.get("token_type", "")
-        self.refresh_token = data.get("refresh_token", "")
-        self.refresh_expires = data.get("refresh_expires", "")
-        self.refresh_expires_at = data.get("refresh_expires_at", "")
-        self.account_id = data.get("account_id", "")
-        self.client_id = data.get("client_id", "")
-        self.internal_client = data.get("internal_client", False)
-        self.client_service = data.get("client_service", "")
-        self.display_name = data.get("displayName", "")
-        self.app = data.get("app", "")
-        self.in_app_id = data.get("in_app_id", "")
-
-
-class EpicGenerator:
-    def __init__(self) -> None:
-        self.user_agent = (
-            f"DeviceAuthGenerator/{platform.system()}/{platform.version()}"
-        )
-        self.http = aiohttp.ClientSession(headers={"User-Agent": self.user_agent})
-        self.access_token = ""
-        self.http: aiohttp.ClientSession
-
-    async def start(self) -> None:
-        self.access_token = await self.get_access_token()
-
-    async def get_access_token(self) -> str:
-        # async with self.http.request(
-        #     method = "POST",
-        #         url = f"https://www.epicgames.com/id/api/redirect?clientId={CLIENT_ID}&responseType=code",
-        #
-        # )
-        async with self.http.request(
-            method="POST",
-            url="https://account-public-service-prod.ol.epicgames.com/account/api/oauth/token",
-            headers={
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Authorization": f"basic {SWITCH_TOKEN}",
-            },
-            data={
-                "grant_type": "client_credentials",
-            },
-        ) as response:
-            data = await response.json()
-            return data["access_token"]
-
-    async def create_device_code(self) -> tuple:
-        async with self.http.request(
-            method="POST",
-            url="https://account-public-service-prod03.ol.epicgames.com/account/api/oauth/deviceAuthorization",
-            headers={
-                "Authorization": f"bearer {self.access_token}",
-                "Content-Type": "application/x-www-form-urlencoded",
-            },
-        ) as response:
-            data = await response.json()
-            return data["verification_uri_complete"], data["device_code"]
-
-    async def create_exchange_code(self, user: EpicUser) -> str:
-        async with self.http.request(
-            method="GET",
-            url="https://account-public-service-prod03.ol.epicgames.com/account/api/oauth/exchange",
-            headers={"Authorization": f"bearer {user.access_token}"},
-        ) as response:
-            data = await response.json()
-            return data["code"]
-
-    async def wait_for_device_code_completion(self, user_id, code: str) -> EpicUser:
-        while True:
-            async with self.http.request(
-                method="POST",
-                url="https://account-public-service-prod03.ol.epicgames.com/account/api/oauth/token",
-                headers={
-                    "Authorization": f"basic {SWITCH_TOKEN}",
-                    "Content-Type": "application/x-www-form-urlencoded",
-                },
-                data={"grant_type": "device_code", "device_code": code},
-            ) as request:
-                token = await request.json()
-
-                if request.status == 200:
-                    break
-                else:
-                    if (
-                        token["errorCode"]
-                        == "errors.com.epicgames.account.oauth.authorization_pending"
-                    ):
-                        pass
-                    elif token["errorCode"] == "g":
-                        pass
-                    else:
-                        print(json.dumps(token, sort_keys=False, indent=4))
-
-                await asyncio.sleep(1)
-
-        async with self.http.request(
-            method="GET",
-            url="https://account-public-service-prod03.ol.epicgames.com/account/api/oauth/exchange",
-            headers={"Authorization": f"bearer {token['access_token']}"},
-        ) as request:
-            exchange = await request.json()
-
-        async with self.http.request(
-            method="POST",
-            url="https://account-public-service-prod03.ol.epicgames.com/account/api/oauth/token",
-            headers={
-                "Authorization": f"basic {IOS_CREDENTIALS}",
-                "Content-Type": "application/x-www-form-urlencoded",
-            },
-            data={
-                "grant_type": "exchange_code",
-                "exchange_code": exchange["code"],
-            },
-        ) as request:
-            auth_information = await request.json()
-
-            return EpicUser(data=auth_information)
-
-    async def create_device_auths(self, user: EpicUser) -> dict:
-        async with self.http.request(
-            method="POST",
-            url=f"https://account-public-service-prod.ol.epicgames.com/account/api/public/account/{user.account_id}/deviceAuth",
-            headers={
-                "Authorization": f"bearer {user.access_token}",
-                "Content-Type": "application/json",
-            },
-        ) as request:
-            data = await request.json()
-            return {
-                "device_id": data["deviceId"],
-                "account_id": data["accountId"],
-                "secret": data["secret"],
-                "user_agent": data["userAgent"],
-                "created": {
-                    "location": data["created"]["location"],
-                    "ip_address": data["created"]["ipAddress"],
-                    "datetime": data["created"]["dateTime"],
-                },
-            }
-
-    async def get_cosmetic_info(
-        cosmetic_id: str, session: aiohttp.ClientSession
-    ) -> dict:
-        async with session.get(
-            f"https://fortnite-api.com/v2/cosmetics/br/{cosmetic_id}"
-        ) as resp:
-            if resp.status != 200:
-                return {
-                    "id": cosmetic_id,
-                    "rarity": "Common",
-                    "name": "Unknown",
-                    "styles": [],
-                }
-            data = await resp.json()
-            return {
-                "id": cosmetic_id,
-                "rarity": data.get("rarity", "Common"),
-                "name": data.get("name", "Unknown"),
-            }
+    def __init__(self, ):
 
 
 async def set_affiliate(
@@ -753,112 +450,10 @@ async def get_vbucks_info(session: aiohttp.ClientSession, user: EpicUser) -> dic
         return {"totalAmount": total_vbucks}
 
 
-async def get_profile_stats(session: aiohttp.ClientSession, user: EpicUser) -> dict:
-    async with session.post(
-        f"https://fortnite-public-service-prod11.ol.epicgames.com/fortnite/api/game/v2/profile/{user.account_id}/client/QueryProfile?profileId=athena&rvn=-1",
-        headers={
-            "Authorization": f"bearer {user.access_token}",
-            "Content-Type": "application/json",
-        },
-        json={},
-    ) as resp:
-        if resp.status != 200:
-            return {"error": f"Error fetching account stats ({resp.status})"}
-        data = await resp.json()
-
-        attributes = (
-            data.get("profileChanges", [{}])[0]
-            .get("profile", {})
-            .get("stats", {})
-            .get("attributes", {})
-        )
-        account_level = attributes.get("accountLevel", 0)
-
-        past_seasons = attributes.get("past_seasons", [])
-        total_wins = sum(season.get("numWins", 0) for season in past_seasons)
-        total_matches = sum(
-            season.get("numHighBracket", 0)
-            + season.get("numLowBracket", 0)
-            + season.get("numHighBracket_LTM", 0)
-            + season.get("numLowBracket_LTM", 0)
-            + season.get("numHighBracket_Ar", 0)
-            + season.get("numLowBracket_Ar", 0)
-            for season in past_seasons
-        )
-        try:
-            last_login_raw = attributes.get("last_match_end_datetime", "N/A")
-            if last_login_raw != "N/A":
-                last_played_date = datetime.strptime(
-                    last_login_raw, "%Y-%m-%dT%H:%M:%S.%fZ"
-                )
-                last_played_str = last_played_date.strftime("%d/%m/%y")
-                days_since_last_played = (datetime.utcnow() - last_played_date).days
-                last_played_info = f"{last_played_str} ({days_since_last_played} дней)"
-            else:
-                last_played_info = "LOL +1200"
-        except Exception as e:
-            logger.error(f"Error parsing last_match_end_datetime: {e}")
-            last_played_info = "LOL +1200"
-        seasons_info = []
-        for season in past_seasons:
-            season_info = (
-                f"Сезон {season.get('seasonNumber', 'Неизвестно')}\n"
-                f"› Уровень: {season.get('seasonLevel', 'Неизвестно')}\n"
-                f"› Боевой пропуск куплен: {bool_to_emoji(season.get('purchasedVIP', False))}\n"
-                f"› Побед в сезоне: {season.get('numWins', 0)}\n"
-            )
-            seasons_info.append(season_info)
-
-        return {
-            "account_level": account_level,
-            "total_wins": total_wins,
-            "total_matches": total_matches,
-            "last_played_info": last_played_info,
-            "seasons_info": seasons_info,
-        }
 
 
-def create_season_messages(seasons_info):
-    messages = []
-    current_message = "Information about temporary passes\n"
-    message_length = len(current_message)
 
-    for season_info in seasons_info:
-        if message_length + len(season_info) + 2 > 4096:
-            messages.append(current_message)
-            current_message = "Information about temporary passes\n"
-            message_length = len(current_message)
-
-        current_message += season_info + "\n\n"
-        message_length += len(season_info) + 2
-
-    if message_length > 0:
-        messages.append(current_message)
-
-    return messages
-
-
-async def fetch_user_info(session, username):
-    api_url = f"https://api.proswapper.xyz/external/name/{username}"
-    async with session.get(api_url) as response:
-        if response.status == 200:
-            response_body = await response.text()
-            user_info_list = json.loads(response_body)
-            return user_info_list
-        return None
-
-
-async def fetch_ranks_info(session, account_id):
-    ranks_api_url = f"https://api.proswapper.xyz/ranks/lookup/id/{account_id}"
-    async with session.get(ranks_api_url) as response:
-        if response.status == 200:
-            response_body = await response.text()
-            ranks_info = json.loads(response_body)
-            return ranks_info
-        return None
-
-
-@dp.message(Command("user_info"))
+@router.message(Command("user_info"))
 async def user_info(message: Message):
     await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
 
@@ -929,12 +524,11 @@ async def user_info(message: Message):
         print(f"Error in userinfo_task: {e}")
 
 
-@dp.message(Command("launch"))
+@router.message(Command("launch"))
 async def launch_task(message: Message):
     await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
 
     try:
-        global general_exchange_code, general_user_account_id, general_path
         epic_generator = EpicGenerator()
         await epic_generator.start()
         device_code_url, device_code = await epic_generator.create_device_code()
@@ -942,24 +536,12 @@ async def launch_task(message: Message):
             text=f"Пожалуйста, авторизуйте свою учетную запись, перейдя по следующей ссылке: {device_code_url}",
         )
 
-        user = await epic_generator.wait_for_device_code_completion(device_code)
+        user = await epic_generator.wait_for_device_code_completion(code=device_code)
         exchange_code = await epic_generator.create_exchange_code(user)
         path = "C:\\Program Files\\Epic Games\\Fortnite\\FortniteGame\\Binaries\\Win64"
         data = f"launch_game:{str(path)}:{str(exchange_code)}:{str(user.account_id)}"
         print(sys.getsizeof(data))
         launch_command = (
-            "<code>"
-            f'start /d "{path}"\\FortniteLauncher.exe '
-            f"-AUTH_LOGIN=unused "
-            f"-AUTH_PASSWORD={exchange_code} "
-            f"-AUTH_TYPE=exchangecode "
-            f"-epicapp=Fortnite "
-            f"-epicenv=Prod "
-            f"-EpicPortal "
-            f"-epicuserid={user.account_id}"
-            "</code>"
-        )
-        launch_command2 = (
             "<code>"
             f'start -WorkingDirectory "C:\\Program Files\\Epic Games\\Fortnite\\FortniteGame\\Binaries\\Win64" '
             f'-FilePath "{path}\\FortniteLauncher.exe" '
@@ -968,7 +550,7 @@ async def launch_task(message: Message):
         )
 
         await message.answer(
-            f"Start the game using the following command:\n\n{launch_command2}",
+            f"Start the game using the following command:\n\n{launch_command}",
             parse_mode="HTML",
         )
     except Exception as e:
@@ -1013,7 +595,7 @@ async def launch_task(message: Message):
 #                             print(f"Error deleting friend {friend['accountId']} ({resp.status})")
 #     except Exception as e:
 
-@dp.message(Command("help"))
+@router.message(Command("help"))
 async def help_task(message: Message):
     await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
 
@@ -1052,7 +634,7 @@ def get_user_settings(user_id):
             }
 
 
-@dp.message(Command("login"))
+@router.message(Command("login"))
 async def login_task(message: Message):
 
     await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
@@ -1086,7 +668,7 @@ async def login_task(message: Message):
         )
 
         task = asyncio.create_task(
-            epic_generator.wait_for_device_code_completion(user_id=message.from_user.id, code=device_code)
+            epic_generator.wait_for_device_code_completion(code=device_code)
         )
         active_login_tasks[message.from_user.id] = task
         current_user = await task
@@ -1100,7 +682,7 @@ async def login_task(message: Message):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             need_additional_info_message = cursor.execute(
-                "SELECT need_additional_info_message FROM Settings WHERE user_id = ?",
+                "SELECT need_additional_info_message FROM users WHERE user_id = ?",
                 (message.from_user.id,),
             )
 
@@ -1245,9 +827,6 @@ async def login_task(message: Message):
 
                 combined_images = []
                 for group in item_groups:
-                    sorted_ids = await sort_ids_by_rarity(
-                        item_groups[group], session
-                    )
                     if group in item_groups:
                         sorted_ids = await sort_ids_by_rarity(
                             item_groups[group], session
@@ -1296,226 +875,30 @@ async def login_task(message: Message):
         logger.error(f"Ошибка: {e}")
 
 
+@router.message(Command("settings"))
+async def cmd_settings(message: Message):
+    try:
+        await message.delete()
+        sent = await message.answer(
+            text=MENU_CONFIG["main"]["title"],
+            reply_markup=build_keyboard("main", message.from_user.id)
+        )
+        user_messages[message.from_user.id] = sent.message_id
+    except Exception as e:
+        logger.error(f"Settings error: {e}")
+        await message.answer("⚠️ Ошибка загрузки настроек")
 
-@dp.message(Command("settings"))
-async def settings_command(message: Message):
-    await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
-    sent_message = await message.answer("Настройки:", reply_markup=get_settings_keyboard())
-    user_messages[message.from_user.id] = sent_message.message_id
-
-
-class SettingsCallback(CallbackData, prefix="settings"):
-    db_name: str  # Основное действие (navigate, toggle)
-    menu: str     # Текущее меню (main, customization, automation)
-    target: str   # Целевой раздел/настройка
-
-class CustomizationCallback(CallbackData, prefix="customization"):
-    db_name: str  # Основное действие (navigate, toggle)
-    menu: str     # Текущее меню (main, customization, automation)
-    target: str   # Целевой раздел/настройка
-
-
-def get_settings_keyboard():
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Кастомизация",
-                    callback_data=SettingsCallback(
-                        db_name="Customization", menu="settings", target="customization"
-                    ).pack(),
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Автоматизация",
-                    callback_data=SettingsCallback(
-                        db_name="Automation", menu="settings", target="automation"
-                    ).pack(),
-                )
-            ],
-        ]
+@router.callback_query(SettingsCallback.filter(F.action == "navigate"))
+async def handle_navigation(callback: CallbackQuery, callback_data: SettingsCallback):
+    await callback.answer()
+    await callback.message.edit_text(
+        text=MENU_CONFIG[callback_data.section]["title"],
+        reply_markup=build_keyboard(callback_data.section, callback.from_user.id)
     )
-    return keyboard
-
-@dp.callback_query(SettingsCallback.filter())
-async def settings_callback_handler(
-    callback: CallbackQuery, callback_data: SettingsCallback
-):
-    target = callback_data.target
-    db_name = callback_data.db_name
-
-    if target == "customization":
-        await callback.message.edit_text(
-            "Кастомизация:", reply_markup=get_customization_keyboard()
-        )
-    elif target == "automation":
-        await callback.message.edit_text(
-            "Автоматизация:", reply_markup=get_items_keyboard(callback.from_user.id, db_name, automation)
-        )
-
-def get_customization_keyboard():
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Какие предметы чекать",
-                    callback_data=CustomizationCallback(
-                        db_name="Customization", menu="customization", target="items_to_check"
-                    ).pack(),
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Дополнительные данные",
-                    callback_data=CustomizationCallback(
-                        db_name="Customization", menu="customization", target="additional_data"
-                    ).pack(),
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Назад",
-                    callback_data=CustomizationCallback(
-                        db_name="Customization", menu="customization", target="settings"
-                    ).pack(),
-                )
-            ],
-        ]
-    )
-    return keyboard
-
-@dp.callback_query(CustomizationCallback.filter())
-async def customization_callback_handler(
-    callback: CallbackQuery, callback_data: CustomizationCallback
-):
-    target = callback_data.target
-
-    if target == "items_to_check":
-        await callback.message.edit_text(
-            "Какие предметы чекать:", reply_markup=get_items_keyboard(callback.from_user.id, "Customization", order)
-        )
-    elif target == "additional_info":
-        await callback.message.edit_text(
-            "Дополнительные данные:", reply_markup=get_items_keyboard(callback.from_user.id, "Automation", order)
-        )
-    elif target == "settings":
-        await callback.message.edit_text(
-            "Настройки:", reply_markup=get_settings_keyboard()
-        )
-
-
-
-
-
-def get_items_keyboard(user_id, db_name, item_dict):
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(f"SELECT * FROM {db_name} WHERE user_id = ?", (user_id,))
-        table = cursor.fetchone()
-        if not table:
-            cursor.execute(
-                f"INSERT INTO {db_name} (user_id) VALUES (?)",
-                (user_id,),
-            )
-            conn.commit()
-            table = cursor.fetchone()
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[])
-
-    for item_name, field_name in item_dict.items():
-        # Получаем текущее состояние (включено/выключено)
-        is_enabled = table[field_name]
-
-        # Создаем кнопку с текстом, отражающим текущее состояние
-        button_text = f"{item_name} {'✅' if is_enabled else '❌'}"
-        keyboard.inline_keyboard.append(
-            [
-                InlineKeyboardButton(
-                    text=button_text,
-                    callback_data=ItemsCallback(
-                        action="toggle", item=field_name, db_name=db_name
-                    ).pack(),
-                )
-            ]
-        )
-
-    keyboard.inline_keyboard.append(
-        [
-            InlineKeyboardButton(
-                text="Назад",
-                callback_data=CustomizationCallback(action="back", setting="main").pack(),
-            )
-        ]
-    )
-
-    return keyboard
-
-
-class ItemsCallback(CallbackData, prefix="items"):
-    action: str  # Действие (например, "toggle")
-    item: str  # Категория предмета (например, "skins", "backpacks")
-    db_name: str
-
-
-@dp.callback_query(ItemsCallback.filter())
-async def item_toggle_callback_handler(callback: CallbackQuery, callback_data: ItemsCallback):
-    user_id = callback.from_user.id
-    item_name = callback_data.item
-    action = callback_data.action
-    db_name = callback_data.db_name
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        db_data = cursor.execute(
-            f"SELECT * FROM {db_name} WHERE user_id = ?", (user_id,)
-        ).fetchone()
-        if not db_data:
-            # Если записи нет, создаем новую с настройками по умолчанию
-            cursor.execute(
-                f"INSERT INTO {db_name} (user_id) VALUES (?)",
-                (user_id,),
-            )
-            conn.commit()
-
-    if action == "toggle":
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            # Обновляем значение в базе данных
-            cursor.execute(
-                f"UPDATE {db_name} SET {item_name} = NOT {item_name} WHERE user_id = ?",
-                (user_id,),
-            )
-            customization = cursor.execute(
-                f"SELECT * FROM {db_name} WHERE user_id = ?", (user_id,)
-            ).fetchone()
-            if not customization:
-                # Если записи нет, создаем новую с настройками по умолчанию
-                cursor.execute(
-                    f"INSERT INTO {db_name} user_id = ?",
-                    (user_id,),
-                )
-                cursor.execute(
-                    f"UPDATE {db_name} SET {item_name} = NOT {item_name} WHERE user_id = ?",
-                    (user_id,),
-                )
-            conn.commit()
-
-            # Получаем обновленное состояние
-            cursor.execute(
-                f"SELECT {item_name} FROM {db_name} WHERE user_id = ?", (user_id,)
-            )
-
-            new_state = cursor.fetchone()
-
-        # Обновляем клавиатуру только если состояние изменилось
-        await callback.message.edit_reply_markup(
-            reply_markup=get_items_keyboard(user_id, db_name, automation)
-        )
-
-        # Отправляем уведомление об успешном изменении
-        await callback.answer(f"Изменено на {'✅' if new_state else '❌'}!")
-
 
 async def main():
+    dp.include_router(router)
+
     await dp.start_polling(bot)
 
 
@@ -1523,3 +906,4 @@ if __name__ == "__main__":
     asyncio.run(main())
 
     print("Telegram-бот запустился")
+
