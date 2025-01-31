@@ -323,7 +323,7 @@ async def get_cosmetic_info(cosmetic_id: str, session: aiohttp.ClientSession) ->
         }
 
 
-def get_cosmetic_type(cosmetic_id: str) -> str | None:
+async def get_cosmetic_type(cosmetic_id: str) -> str | None:
     """
     Определяет тип косметики по её ID.
     :param cosmetic_id: ID косметики.
@@ -335,7 +335,7 @@ def get_cosmetic_type(cosmetic_id: str) -> str | None:
     return None
 
 
-def combine_images(
+async def combine_images(
     images,
     username: str,
     item_count: int,
@@ -489,20 +489,21 @@ async def create_img(
                 )
             ]
         elif item_order:
+            cosmetic_types = [await get_cosmetic_type(info["id"]) for info in img_info_list]
             sorted_images = [
                 img
                 for _, img in sorted(
                     zip(img_info_list, images),
                     key=lambda x: (
-                        item_order.index(get_cosmetic_type(x[0]["id"]))
-                        if get_cosmetic_type(x[0]["id"]) in item_order
+                        item_order.index(cosmetic_types[img_info_list.index(x[0])])
+                        if cosmetic_types[img_info_list.index(x[0])] in item_order
                         else 999
                     ),
                 )
             ]
         else:
             sorted_images = images
-        combined_image = combine_images(
+        combined_image = await combine_images(
             sorted_images,
             username,
             len(img_ids),
@@ -663,15 +664,27 @@ async def get_profile_stats(session: aiohttp.ClientSession, user: EpicUser) -> d
             for season in past_seasons
         )
         try:
+            # Получаем значение last_match_end_datetime из attributes
             last_login_raw = attributes.get("last_match_end_datetime", "N/A")
+
             if last_login_raw != "N/A":
-                last_played_date = datetime.strptime(
-                    last_login_raw, "%Y-%m-%dT%H:%M:%S.%fZ"
-                )
+                # Парсим дату с учетом формата ISO 8601
+                last_played_date = datetime.strptime(last_login_raw, "%Y-%m-%dT%H:%M:%S.%fZ")
+
+                # Преобразуем в offset-aware datetime (добавляем UTC временную зону)
+                last_played_date = last_played_date.replace(tzinfo=UTC)
+
+                # Текущее время в UTC
+                current_time = datetime.now(UTC)
+
+                # Вычисляем разницу в днях
+                days_since_last_played = (current_time - last_played_date).days
+
+                # Форматируем дату для вывода
                 last_played_str = last_played_date.strftime("%d/%m/%y")
-                days_since_last_played = (datetime.now(UTC) - last_played_date).days
                 last_played_info = f"{last_played_str} ({days_since_last_played} дней)"
             else:
+                # Если last_match_end_datetime отсутствует
                 last_played_info = "LOL +1200"
         except Exception as e:
             logger.error(f"Error parsing last_match_end_datetime: {e}")
@@ -985,10 +998,12 @@ async def login_task(message: Message):
             return
         async with get_db_connection() as conn:
             async with conn.cursor() as cursor:
-                need_additional_info_message = await cursor.execute(
+                await cursor.execute(
                     "SELECT need_additional_info_message FROM users WHERE user_id = ?",
                     (message.from_user.id,),
                 )
+                row = await cursor.fetchone()
+                need_additional_info_message = row["need_additional_info_message"] if row else None
 
         async with aiohttp.ClientSession() as session:
             await bot.delete_message(chat_id=message.chat.id, message_id=url_device_message.message_id)
@@ -1114,13 +1129,13 @@ async def login_task(message: Message):
                 )
                 for item in filtered_items:
                     try:
-                        id = item.get("templateId", "")
-                        if idpattern.match(id):
-                            item_type = get_cosmetic_type(id)
+                        template_id = item.get("templateId", "")
+                        if idpattern.match(template_id):
+                            item_type = await get_cosmetic_type(template_id)
                             if item_type and settings.get(
                                 f"{item_type}_enabled".lower()
                             ):
-                                item_groups[item_type].append(id.split(":")[1])
+                                item_groups[item_type].append(template_id.split(":")[1])
                     except Exception as e:
                         logger.error(
                             f"Ошибка при получении значений из profile.values() : {e}"
@@ -1158,7 +1173,7 @@ async def login_task(message: Message):
                                     )
                                 )
                             except Exception as e:
-                                logger.error(f"Ошибка: {e}")
+                                logger.error(f"Ошибка в цикле groups: {e}")
                                 continue
                         else:
                             logger.warning(
@@ -1201,16 +1216,18 @@ async def build_keyboard(menu_name: str, user_id: int) -> InlineKeyboardMarkup:
 
     async with get_db_connection() as conn:
         async with conn.cursor() as cursor:
-            user = await cursor.execute('''SELECT * FROM users 
-                                WHERE user_id = ?''', (user_id,)).fetchone()
+            await cursor.execute('''SELECT * FROM users 
+                                            WHERE user_id = ?''', (user_id,))
+            user = await cursor.fetchone()
 
             # Если пользователя нет - создаем
             if not user:
                 await cursor.execute('''INSERT INTO users (user_id) 
                              VALUES (?)''', (user_id,))
                 await conn.commit()
-                user = await cursor.execute('''SELECT * FROM users 
-                                    WHERE user_id = ?''', (user_id,)).fetchone()
+                await cursor.execute('''SELECT * FROM users 
+                                    WHERE user_id = ?''', (user_id,))
+                user = await cursor.fetchone()
 
         # Добавляем переключатели для полей
         if "fields" in menu:
@@ -1260,7 +1277,7 @@ async def cmd_settings(message: types.Message):
     await message.delete()
     sent = await message.answer(
         text=MENU_CONFIG["main"]["title"],
-        reply_markup=build_keyboard("main", message.from_user.id)
+        reply_markup= await build_keyboard("main", message.from_user.id)
     )
     # Сохраняем ID сообщения для последующего обновления
     user_messages[message.from_user.id] = sent.message_id
@@ -1271,7 +1288,7 @@ async def handle_navigation(callback: types.CallbackQuery, callback_data: Settin
     await callback.answer()
     await callback.message.edit_text(
         text=MENU_CONFIG[callback_data.section]["title"],
-        reply_markup=build_keyboard(callback_data.section, callback.from_user.id)
+        reply_markup= await build_keyboard(callback_data.section, callback.from_user.id)
     )
 
 
@@ -1284,10 +1301,12 @@ async def handle_toggle(callback: CallbackQuery, callback_data: ItemsCallback):
         async with get_db_connection() as conn:
             async with conn.cursor() as cursor:
                 # Получаем текущее состояние
-                current_state = await cursor.execute(
+                await cursor.execute(
                     f"SELECT {field} FROM users WHERE user_id = ?",
                     (user_id,)
-                ).fetchone()[0]
+                )
+                result = await cursor.fetchone()
+                current_state = result[0] if result else None
 
                 # Вычисляем новое состояние
                 new_state = 0 if current_state else 1
@@ -1300,17 +1319,19 @@ async def handle_toggle(callback: CallbackQuery, callback_data: ItemsCallback):
                 await conn.commit()
 
                 # Проверяем реальное изменение
-                updated_state = await cursor.execute(
+                await cursor.execute(
                     f"SELECT {field} FROM users WHERE user_id = ?",
                     (user_id,)
-                ).fetchone()[0]
+                )
+                result = await cursor.fetchone()
+                updated_state = result[0] if result else None
 
                 if current_state == updated_state:
                     await callback.answer("ℹ️ Состояние не изменилось")
                     return
 
         # Обновляем клавиатуру
-        new_keyboard = build_keyboard(callback_data.menu, user_id)
+        new_keyboard = await build_keyboard(callback_data.menu, user_id)
         await callback.message.edit_reply_markup(reply_markup=new_keyboard)
         await callback.answer("⚙️ Настройка обновлена!")
 
