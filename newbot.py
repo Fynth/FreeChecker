@@ -2,10 +2,11 @@ import math
 import platform
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
-from datetime import datetime
+from contextlib import asynccontextmanager
+from datetime import datetime, UTC
 from typing import Any
 
+import aiosqlite
 from aiogram import Dispatcher, Bot, Router, F, types
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
@@ -14,7 +15,6 @@ from aiogram.types import (
     Message,
     InputMediaPhoto,
     BufferedInputFile,
-    InlineKeyboardButton,
     InlineKeyboardMarkup,
     CallbackQuery,
 )
@@ -31,14 +31,11 @@ logger = logging.getLogger(__name__)
 
 router = Router()
 
-@contextmanager
-def get_db_connection():
-    conn = sqlite3.connect("telegram_users.sqlite")
-    conn.row_factory = sqlite3.Row  # Для доступа к данным по имени столбца
-    try:
+@asynccontextmanager
+async def get_db_connection():
+    async with aiosqlite.connect('telegram_users.sqlite') as conn:
+        conn.row_factory = aiosqlite.Row
         yield conn
-    finally:
-        conn.close()
 
 active_login_tasks = {}  # Словарь для отслеживания активных задач
 user_messages = {}
@@ -52,172 +49,48 @@ dp = Dispatcher()
 dp.include_router(router)
 
 
-
 class TelegramUser:
     def __init__(self, user_id, username=None):
         self.user_id = user_id
         self.username = username
 
-    def save(self, cursor):
+
+    async def save(self, cursor):
+
         # Проверяем, существует ли пользователь в базе данных
-        cursor.execute(
-            "SELECT login_count FROM Users WHERE user_id = ?", (self.user_id,)
+        await cursor.execute(
+            "SELECT login_count FROM users WHERE user_id = ?", (self.user_id,)
         )
-        row = cursor.fetchone()
+        row = await cursor.fetchone()
 
         if row:
             # Если пользователь существует, увеличиваем login_count на 1
             new_login_count = row[0] + 1
-            cursor.execute(
+            await cursor.execute(
                 "UPDATE Users SET login_count = ? WHERE user_id = ?",
                 (new_login_count, self.user_id),
             )
         else:
             # Если пользователь не существует, создаем новую запись с login_count = 1
-            cursor.execute(
+            await cursor.execute(
                 "INSERT INTO Users (user_id, username, login_count) VALUES (?, ?, ?)",
                 (self.user_id, self.username, 1),
             )
 
     @staticmethod
-    def get_by_telegram_id(cursor, user_id):
-        cursor.execute("SELECT * FROM Users WHERE user_id = ?", (user_id,))
-        row = cursor.fetchone()
+    async def get_all_by_telegram_id(cursor, user_id):
+        await cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+        row = await cursor.fetchone()
         if row:
-            return TelegramUser(row[1], row[2], row[3])
+            return TelegramUser(row[1], row[2])
         return None
 
-
-class Settings:
-    def __init__(
-        self,
-        user_id,
-        fortnite_enabled=False,
-        transaction_enabled=False,
-        autodelete_friends=False,
-        autodelete_external_auths=False,
-        my_username_enabled=False,
-        bot_username_enabled=False,
-        logo_enabled=False,
-    ):
-        self.user_id = user_id
-        self.fortnite_enabled = fortnite_enabled
-        self.transaction_enabled = transaction_enabled
-        self.autodelete_friends = autodelete_friends
-        self.autodelete_external_auths = autodelete_external_auths
-        self.my_username_enabled = my_username_enabled
-        self.bot_username_enabled = bot_username_enabled
-        self.logo_enabled = logo_enabled
-
-    def save(self, cursor):
-        cursor.execute(
-            "INSERT OR REPLACE INTO Settings (user_id, fortnite_enabled, transaction_enabled, autodelete_friends, autodelete_external_auths, my_username_enabled, bot_username_enabled, logo_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                self.user_id,
-                self.fortnite_enabled,
-                self.transaction_enabled,
-                self.autodelete_friends,
-                self.autodelete_external_auths,
-                self.my_username_enabled,
-                self.bot_username_enabled,
-                self.logo_enabled,
-            ),
+    @staticmethod
+    async def create(cursor, user_id, username):
+        await cursor.execute(
+            "INSERT INTO Users (user_id, username) VALUES (?, ?)",
+            (user_id, username),
         )
-
-    @staticmethod
-    def get_by_user_id(cursor, user_id):
-        cursor.execute("SELECT * FROM Settings WHERE user_id = ?", (user_id,))
-        row = cursor.fetchone()
-        if row:
-            return Settings(
-                row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8]
-            )
-        return None
-
-
-class Login:
-    def __init__(self, user_id, login_time=datetime.now()):
-        self.user_id = user_id
-        self.login_time = login_time
-
-    def save(self, cursor):
-        cursor.execute(
-            "INSERT INTO Logins (user_id, login_time) VALUES (?, ?)",
-            (self.user_id, self.login_time),
-        )
-
-    @staticmethod
-    def get_by_user_id(cursor, user_id):
-        cursor.execute("SELECT * FROM Logins WHERE user_id = ?", (user_id,))
-        rows = cursor.fetchall()
-        return [Login(row[1], row[2]) for row in rows]
-
-    @staticmethod
-    def get_count_by_user_id(cursor, user_id):
-        cursor.execute("SELECT * FROM Logins WHERE user_id = ?", (user_id,))
-        rows = cursor.fetchall()
-        return [Login(row[1], row[2]) for row in rows]
-
-
-class Customization:
-    def __init__(
-        self,
-        user_id,
-        skins_enabled=True,
-        backpacks_enabled=True,
-        pickaxes_enabled=True,
-        emotes_enabled=True,
-        gliders_enabled=True,
-        wraps_enabled=True,
-        sprays_enabled=True,
-        banners_enabled=True,
-        all_items_enabled=False,
-    ):
-        self.user_id = user_id
-        self.skins_enabled = skins_enabled
-        self.backpacks_enabled = backpacks_enabled
-        self.pickaxes_enabled = pickaxes_enabled
-        self.emotes_enabled = emotes_enabled
-        self.gliders_enabled = gliders_enabled
-        self.wraps_enabled = wraps_enabled
-        self.sprays_enabled = sprays_enabled
-        self.banners_enabled = banners_enabled
-        self.all_items_enabled = all_items_enabled
-
-    def save(self, cursor):
-        cursor.execute(
-            "INSERT OR REPLACE INTO Customization (user_id, skins_enabled, backpacks_enabled, pickaxes_enabled, emotes_enabled, gliders_enabled, wraps_enabled, banners_enabled, all_items_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                self.user_id,
-                self.skins_enabled,
-                self.backpacks_enabled,
-                self.pickaxes_enabled,
-                self.emotes_enabled,
-                self.gliders_enabled,
-                self.wraps_enabled,
-                self.banners_enabled,
-                self.all_items_enabled,
-            ),
-        )
-
-    @staticmethod
-    def get_by_user_id(cursor, user_id):
-        cursor.execute("SELECT * FROM Customization WHERE user_id = ?", (user_id,))
-        row = cursor.fetchone()
-        if row:
-            return Customization(
-                row[1],
-                row[2],
-                row[3],
-                row[4],
-                row[5],
-                row[6],
-                row[7],
-                row[8],
-                row[9],
-                row[10],
-            )
-        return None
 
 
 class EpicUser:
@@ -292,7 +165,7 @@ class EpicGenerator:
             data = await response.json()
             return data["code"]
 
-    async def wait_for_device_code_completion(self, user_id, code: str) -> EpicUser:
+    async def wait_for_device_code_completion(self, code: str) -> EpicUser:
         while True:
             async with self.http.request(
                 method="POST",
@@ -386,24 +259,24 @@ class EpicGenerator:
             }
 
 
-async def set_affiliate(
-    session: aiohttp.ClientSession,
-    account_id: str,
-    access_token: str,
-    affiliate_name: str = "Kaayyy",
-) -> str | Any:
-    async with session.post(
-        f"https://fortnite-public-service-prod11.ol.epicgames.com/fortnite/api/game/v2/profile/{account_id}/client/SetAffiliateName?profileId=common_core",
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "content-type": "application/json",
-        },
-        json={"affiliateName": affiliate_name},
-    ) as resp:
-        if resp.status != 200:
-            return f"Error setting affiliate name ({resp.status})"
-        else:
-            return await resp.json()
+# async def set_affiliate(
+#     session: aiohttp.ClientSession,
+#     account_id: str,
+#     access_token: str,
+#     affiliate_name: str = "Kaayyy",
+# ) -> str | Any:
+#     async with session.post(
+#         f"https://fortnite-public-service-prod11.ol.epicgames.com/fortnite/api/game/v2/profile/{account_id}/client/SetAffiliateName?profileId=common_core",
+#         headers={
+#             "Authorization": f"Bearer {access_token}",
+#             "content-type": "application/json",
+#         },
+#         json={"affiliateName": affiliate_name},
+#     ) as resp:
+#         if resp.status != 200:
+#             return f"Error setting affiliate name ({resp})"
+#         else:
+#             return await resp.json()
 
 
 async def get_profile(
@@ -523,7 +396,7 @@ def combine_images(
     combined_image.paste(logo, logo_position, logo)
 
     # Prepare text
-    text1 = f"{item_type}: {item_count}"
+    text1 = f" {item_count} {item_type}"
     text2 = f"Checked by {username} | {datetime.now().strftime('%d/%m/%y')}"
     text3 = "t.me/Fornite_Checker_Bot"
     max_text_width = total_width - (logo_position[0] + logo_width + 10)
@@ -796,7 +669,7 @@ async def get_profile_stats(session: aiohttp.ClientSession, user: EpicUser) -> d
                     last_login_raw, "%Y-%m-%dT%H:%M:%S.%fZ"
                 )
                 last_played_str = last_played_date.strftime("%d/%m/%y")
-                days_since_last_played = (datetime.utcnow() - last_played_date).days
+                days_since_last_played = (datetime.now(UTC) - last_played_date).days
                 last_played_info = f"{last_played_str} ({days_since_last_played} дней)"
             else:
                 last_played_info = "LOL +1200"
@@ -946,7 +819,7 @@ async def launch_task(message: Message):
             text=f"Пожалуйста, авторизуйте свою учетную запись, перейдя по следующей ссылке: {device_code_url}",
         )
 
-        user = await epic_generator.wait_for_device_code_completion(device_code)
+        user = await epic_generator.wait_for_device_code_completion(code=device_code)
         exchange_code = await epic_generator.create_exchange_code(user)
         path = "C:\\Program Files\\Epic Games\\Fortnite\\FortniteGame\\Binaries\\Win64"
         data = f"launch_game:{str(path)}:{str(exchange_code)}:{str(user.account_id)}"
@@ -1033,28 +906,37 @@ async def help_task(message: Message):
     except Exception as e:
         await message.answer(text=f"Error: {e}")
 
-def get_user_settings(user_id):
+async def get_user_settings(user_id):
     logging.info(f"Вызов get_user_settings для user_id={user_id}")
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT skins_enabled, backpacks_enabled, pickaxes_enabled, emotes_enabled, gliders_enabled, wraps_enabled, sprays_enabled, all_items_enabled "
-            "FROM users WHERE user_id = ?",
-            (user_id,),
-        )
-        result = cursor.fetchone()
-        if result:
-            return {
-                "skins_enabled": bool(result[0]),
-                "backpacks_enabled": bool(result[1]),
-                "pickaxes_enabled": bool(result[2]),
-                "emotes_enabled": bool(result[3]),
-                "gliders_enabled": bool(result[4]),
-                "wraps_enabled": bool(result[5]),
-                "sprays_enabled": bool(result[6]),
-                "all_items_enabled": bool(result[7]),
-            }
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute(
+                "SELECT skins_enabled, backpacks_enabled, pickaxes_enabled, emotes_enabled, gliders_enabled, wraps_enabled, sprays_enabled, all_items_enabled "
+                "FROM users WHERE user_id = ?",
+                (user_id,),
+            )
+            result = await cursor.fetchone()
+            if result:
+                return {
+                    "skins_enabled": bool(result[0]),
+                    "backpacks_enabled": bool(result[1]),
+                    "pickaxes_enabled": bool(result[2]),
+                    "emotes_enabled": bool(result[3]),
+                    "gliders_enabled": bool(result[4]),
+                    "wraps_enabled": bool(result[5]),
+                    "sprays_enabled": bool(result[6]),
+                    "all_items_enabled": bool(result[7]),
+                }
 
+
+@dp.message(Command("start"))
+async def start(message: Message):
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                await TelegramUser.create(cursor=cursor, user_id=message.from_user.id, username=message.from_user.username)
+    except Exception as e:
+        logger.error("error in start task", e)
 
 @dp.message(Command("login"))
 async def login_task(message: Message):
@@ -1090,7 +972,7 @@ async def login_task(message: Message):
         )
 
         task = asyncio.create_task(
-            epic_generator.wait_for_device_code_completion(user_id=message.from_user.id, code=device_code)
+            epic_generator.wait_for_device_code_completion(code=device_code)
         )
         active_login_tasks[message.from_user.id] = task
         current_user = await task
@@ -1101,27 +983,27 @@ async def login_task(message: Message):
                 text="Ошибка: не удалось получить токен доступа или ID аккаунта.",
             )
             return
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            need_additional_info_message = cursor.execute(
-                "SELECT need_additional_info_message FROM users WHERE user_id = ?",
-                (message.from_user.id,),
-            )
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                need_additional_info_message = await cursor.execute(
+                    "SELECT need_additional_info_message FROM users WHERE user_id = ?",
+                    (message.from_user.id,),
+                )
 
         async with aiohttp.ClientSession() as session:
             await bot.delete_message(chat_id=message.chat.id, message_id=url_device_message.message_id)
-            set_affiliate_response = await set_affiliate(
-                session, current_user.account_id, current_user.access_token, "Kaayyy"
-            )
-            logger.info("set_affiliate worked")
-            if isinstance(set_affiliate_response, str):
-                if "403" in set_affiliate_response:
-                    logger.info(
-                        "Ошибка получения информации (Аккаунт заблокирован)",
-                    )
-                else:
-                    await message.answer(text=set_affiliate_response)
-                return
+            # set_affiliate_response = await set_affiliate(
+            #     session, current_user.account_id, current_user.access_token, "Kaayyy"
+            # )
+            # logger.info("set_affiliate worked")
+            # if isinstance(set_affiliate_response, str):
+            #     if "403" in set_affiliate_response:
+            #         logger.info(
+            #             "Ошибка получения информации (Аккаунт заблокирован)",
+            #         )
+            #     else:
+            #         await message.answer(text=set_affiliate_response)
+            #     return
             account_info = await get_account_info(session, current_user)
             logger.info("get_account_info worked")
             if "error" in account_info:
@@ -1135,9 +1017,7 @@ async def login_task(message: Message):
                 },
                 "athena",
             )
-            if isinstance(profile, str):
-                await message.answer(profile)
-                return
+
             vbucks_info = await get_vbucks_info(session, current_user)
             if "error" in vbucks_info:
                 await message.answer(vbucks_info["error"])
@@ -1160,7 +1040,7 @@ async def login_task(message: Message):
                 f"🏷 Дата создания: {creation_date}\n"
             )
 
-            await message.answer(message_text)
+
 
             if external_auths:
                 connected_accounts_message = "Подключенные аккаунты\n"
@@ -1183,7 +1063,7 @@ async def login_task(message: Message):
             else:
                 connected_accounts_message = "Подключенных аккаунтов нет\n"
 
-            await message.answer(connected_accounts_message)
+
             logger.info("Sent connected accounts information")
             account_stats = await get_profile_stats(session, current_user)
             if "error" in account_stats:
@@ -1198,7 +1078,7 @@ async def login_task(message: Message):
                     f"🎟 Всего матчей: {account_stats['total_matches']}\n"
                     f"🕒 Последняя сыгранная игра: {account_stats['last_played_info']}\n"
                 )
-                await message.answer(additional_info_message)
+
                 logger.info("Sent additional information")
                 seasons_info_embeds = account_stats["seasons_info"]
                 if seasons_info_embeds:
@@ -1208,12 +1088,12 @@ async def login_task(message: Message):
                     )
                 else:
                     seasons_info_message = "Информации о прошлом сезоне нет"
-                await message.answer(seasons_info_message)
+
                 logger.info("Sent seasons information")
 
                 username = message.from_user.username
 
-                settings = get_user_settings(message.from_user.id)
+                settings = await get_user_settings(message.from_user.id)
 
                 item_groups = {
                     "Skins": [],  # Список для предметов
@@ -1286,11 +1166,17 @@ async def login_task(message: Message):
                             )
                             continue
 
-
+                if isinstance(profile, str):
+                    await message.answer(profile)
+                    return
+                await message.answer(message_text)
+                await message.answer(connected_accounts_message)
+                await message.answer(additional_info_message)
+                await message.answer(seasons_info_message)
                 await message.answer_media_group(media=combined_images)
-            with get_db_connection() as conn:
-                cursor = conn.cursor()
-                telegram_user.save(cursor)
+            async with get_db_connection() as conn:
+                async with conn.cursor() as cursor:
+                    await telegram_user.save(cursor)
             if message.from_user.id in active_login_tasks:
                 del active_login_tasks[message.from_user.id]
     except Exception as e:
@@ -1309,21 +1195,22 @@ class ItemsCallback(CallbackData, prefix="items"):
     field: str
 
 
-def build_keyboard(menu_name: str, user_id: int) -> InlineKeyboardMarkup:
+async def build_keyboard(menu_name: str, user_id: int) -> InlineKeyboardMarkup:
     menu = MENU_CONFIG[menu_name]
     builder = InlineKeyboardBuilder()
 
-    with get_db_connection() as conn:
-        user = conn.execute('''SELECT * FROM users 
-                            WHERE user_id = ?''', (user_id,)).fetchone()
-
-        # Если пользователя нет - создаем
-        if not user:
-            conn.execute('''INSERT INTO users (user_id) 
-                         VALUES (?)''', (user_id,))
-            conn.commit()
-            user = conn.execute('''SELECT * FROM users 
+    async with get_db_connection() as conn:
+        async with conn.cursor() as cursor:
+            user = await cursor.execute('''SELECT * FROM users 
                                 WHERE user_id = ?''', (user_id,)).fetchone()
+
+            # Если пользователя нет - создаем
+            if not user:
+                await cursor.execute('''INSERT INTO users (user_id) 
+                             VALUES (?)''', (user_id,))
+                await conn.commit()
+                user = await cursor.execute('''SELECT * FROM users 
+                                    WHERE user_id = ?''', (user_id,)).fetchone()
 
         # Добавляем переключатели для полей
         if "fields" in menu:
@@ -1394,32 +1281,33 @@ async def handle_toggle(callback: CallbackQuery, callback_data: ItemsCallback):
         user_id = callback.from_user.id
         field = callback_data.field
 
-        with get_db_connection() as conn:
-            # Получаем текущее состояние
-            current_state = conn.execute(
-                f"SELECT {field} FROM users WHERE user_id = ?",
-                (user_id,)
-            ).fetchone()[0]
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cursor:
+                # Получаем текущее состояние
+                current_state = await cursor.execute(
+                    f"SELECT {field} FROM users WHERE user_id = ?",
+                    (user_id,)
+                ).fetchone()[0]
 
-            # Вычисляем новое состояние
-            new_state = 0 if current_state else 1
+                # Вычисляем новое состояние
+                new_state = 0 if current_state else 1
 
-            # Обновляем только если состояние изменится
-            conn.execute(
-                f"UPDATE users SET {field} = ? WHERE user_id = ?",
-                (new_state, user_id)
-            )
-            conn.commit()
+                # Обновляем только если состояние изменится
+                await cursor.execute(
+                    f"UPDATE users SET {field} = ? WHERE user_id = ?",
+                    (new_state, user_id)
+                )
+                await conn.commit()
 
-            # Проверяем реальное изменение
-            updated_state = conn.execute(
-                f"SELECT {field} FROM users WHERE user_id = ?",
-                (user_id,)
-            ).fetchone()[0]
+                # Проверяем реальное изменение
+                updated_state = await cursor.execute(
+                    f"SELECT {field} FROM users WHERE user_id = ?",
+                    (user_id,)
+                ).fetchone()[0]
 
-            if current_state == updated_state:
-                await callback.answer("ℹ️ Состояние не изменилось")
-                return
+                if current_state == updated_state:
+                    await callback.answer("ℹ️ Состояние не изменилось")
+                    return
 
         # Обновляем клавиатуру
         new_keyboard = build_keyboard(callback_data.menu, user_id)
