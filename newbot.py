@@ -31,11 +31,13 @@ logger = logging.getLogger(__name__)
 
 router = Router()
 
+
 @asynccontextmanager
 async def get_db_connection():
-    async with aiosqlite.connect('telegram_users.sqlite') as conn:
+    async with aiosqlite.connect("telegram_users.sqlite") as conn:
         conn.row_factory = aiosqlite.Row
         yield conn
+
 
 active_login_tasks = {}  # Словарь для отслеживания активных задач
 user_messages = {}
@@ -49,11 +51,12 @@ dp = Dispatcher()
 dp.include_router(router)
 
 
+global general_exchange_code, general_user_account_id, general_path
+
 class TelegramUser:
     def __init__(self, user_id, username=None):
         self.user_id = user_id
         self.username = username
-
 
     async def save(self, cursor):
 
@@ -174,7 +177,10 @@ class EpicGenerator:
                     "Authorization": f"basic {SWITCH_TOKEN}",
                     "Content-Type": "application/x-www-form-urlencoded",
                 },
-                data={"grant_type": "device_code", "device_code": code},
+                data={
+                    "grant_type": "device_code",
+                    "device_code": code,
+                },
             ) as request:
                 token = await request.json()
 
@@ -238,26 +244,6 @@ class EpicGenerator:
                 },
             }
 
-    async def get_cosmetic_info(
-        cosmetic_id: str, session: aiohttp.ClientSession
-    ) -> dict:
-        async with session.get(
-            f"https://fortnite-api.com/v2/cosmetics/br/{cosmetic_id}"
-        ) as resp:
-            if resp.status != 200:
-                return {
-                    "id": cosmetic_id,
-                    "rarity": "Common",
-                    "name": "Unknown",
-                    "styles": [],
-                }
-            data = await resp.json()
-            return {
-                "id": cosmetic_id,
-                "rarity": data.get("rarity", "Common"),
-                "name": data.get("name", "Unknown"),
-            }
-
 
 # async def set_affiliate(
 #     session: aiohttp.ClientSession,
@@ -294,7 +280,78 @@ async def get_profile(
             return f"Error ({resp.status})"
         else:
             profile_data = await resp.json()
-            return profile_data
+        if profileid=="common_core&rvn=-1":
+            creation_date = (
+                profile_data.get("profileChanges", [{}])[0]
+                .get("profile", {})
+                .get("created", "Unknown")
+            )
+            if creation_date != "Unknown":
+                creation_date = datetime.strptime(
+                    creation_date, "%Y-%m-%dT%H:%M:%S.%fZ"
+                ).strftime("%d/%m/%Y")
+            profile_data["creation_date"] = creation_date
+
+            vbucks_categories = [
+                "Currency:MtxPurchased",
+                "Currency:MtxEarned",
+                "Currency:MtxGiveaway",
+                "Currency:MtxPurchaseBonus",
+            ]
+
+            total_vbucks = 0
+            profile_items = (
+                profile_data.get("profileChanges", [{}])[0].get("profile", {}).get("items", {})
+            )
+            for item_id, item_data in profile_items.items():
+                if item_data.get("templateId") in vbucks_categories:
+                    total_vbucks += item_data.get("quantity", 0)
+            profile_data["totalAmount"] = total_vbucks
+
+            async with session.get(
+                    f"https://account-public-service-prod03.ol.epicgames.com/account/api/public/account/{info["account_id"]}/externalAuths",
+                    headers={"Authorization": f"bearer {info["access_token"]}"},
+            ) as external_resp:
+                if external_resp.status != 200:
+                    profile_data["externalAuths"] = {}
+                else:
+                    external_auths = await external_resp.json()
+                    profile_data["externalAuths"] = external_auths
+
+
+
+        return profile_data
+
+
+async def get_account_library(
+            session: aiohttp.ClientSession, info: dict
+    ):
+    async with session.get(
+            f"https://library-service.live.use1a.ol.epicgames.com/library/api/public/collection/EGS_STATIC_OWNED_COLLECTION/item/account/{info['account_id']}",
+            headers={
+                "Authorization": f"Bearer {info['access_token']}",
+                "content-type": "application/json",
+            },
+            json = {},
+    ) as resp:
+        if resp.status != 200:
+            return f"Error ({resp.status})"
+        else:
+            account_library = await resp.json()
+            return account_library
+
+
+async def delete_external_auths(session: aiohttp.ClientSession, info: dict, external_auth):
+    async with session.delete(
+            f"https://account-public-service-prod.ol.epicgames.com/account/api/public/account/{info['account_id']}/externalAuths/{external_auth}",
+            headers={
+                "Authorization": f"Bearer {info['access_token']}",
+                "content-type": "application/json",
+            },
+            json = {},
+    ) as resp:
+        if resp.status != 204:
+            return f"Error ({resp.status})"
 
 
 async def get_cosmetic_info(cosmetic_id: str, session: aiohttp.ClientSession) -> dict:
@@ -411,9 +468,18 @@ async def combine_images(
         text_bbox1 = font.getbbox(text1)
         text_bbox2 = font.getbbox(text2)
         text_bbox3 = font.getbbox(text3)
-        text_width1, text_height1 = text_bbox1[2] - text_bbox1[0], text_bbox1[3] - text_bbox1[1]
-        text_width2, text_height2 = text_bbox2[2] - text_bbox2[0], text_bbox2[3] - text_bbox2[1]
-        text_width3, text_height3 = text_bbox3[2] - text_bbox3[0], text_bbox3[3] - text_bbox3[1]
+        text_width1, text_height1 = (
+            text_bbox1[2] - text_bbox1[0],
+            text_bbox1[3] - text_bbox1[1],
+        )
+        text_width2, text_height2 = (
+            text_bbox2[2] - text_bbox2[0],
+            text_bbox2[3] - text_bbox2[1],
+        )
+        text_width3, text_height3 = (
+            text_bbox3[2] - text_bbox3[0],
+            text_bbox3[3] - text_bbox3[1],
+        )
         if (
             text_width1 <= max_text_width
             and text_width2 <= max_text_width
@@ -489,7 +555,9 @@ async def create_img(
                 )
             ]
         elif item_order:
-            cosmetic_types = [await get_cosmetic_type(info["id"]) for info in img_info_list]
+            cosmetic_types = [
+                await get_cosmetic_type(info["id"]) for info in img_info_list
+            ]
             sorted_images = [
                 img
                 for _, img in sorted(
@@ -516,20 +584,19 @@ async def create_img(
 
 
 async def sort_ids_by_rarity(ids: list, session: aiohttp.ClientSession) -> list:
-    cosmetic_info_tasks = [get_cosmetic_info(id, session) for id in ids]
+    cosmetic_info_tasks = [get_cosmetic_info(item_id, session) for item_id in ids]
     info_list = await asyncio.gather(*cosmetic_info_tasks, return_exceptions=True)
     for idx, result in enumerate(info_list):
         if isinstance(result, Exception):
             logger.error(f"Error fetching cosmetic info for {ids[idx]}: {result}")
             info_list[idx] = {"id": ids[idx], "rarity": "Common", "name": "Unknown"}
     sorted_ids = [
-        id
-        for _, id in sorted(
+        item_id
+        for _, item_id in sorted(
             zip(info_list, ids), key=lambda x: rarity_priority.get(x[0]["rarity"], 6)
         )
     ]
     return sorted_ids
-
 
 
 async def get_external_auths(session: aiohttp.ClientSession, user: EpicUser) -> dict:
@@ -565,73 +632,73 @@ async def get_account_info(session: aiohttp.ClientSession, user: EpicUser) -> di
 
         return account_info
 
-
-async def get_profile_info(session: aiohttp.ClientSession, user: EpicUser) -> dict:
-    async with session.post(
-        f"https://fortnite-public-service-prod11.ol.epicgames.com/fortnite/api/game/v2/profile/{user.account_id}/client/QueryProfile?profileId=common_core&rvn=-1",
-        headers={"Authorization": f"bearer {user.access_token}"},
-        json={},
-    ) as resp:
-        if resp.status != 200:
-            return {"error": f"Error fetching profile info ({resp.status})"}
-        profile_info = await resp.json()
-
-        creation_date = (
-            profile_info.get("profileChanges", [{}])[0]
-            .get("profile", {})
-            .get("created", "Unknown")
-        )
-        if creation_date != "Unknown":
-            creation_date = datetime.strptime(
-                creation_date, "%Y-%m-%dT%H:%M:%S.%fZ"
-            ).strftime("%d/%m/%Y")
-        profile_info["creation_date"] = creation_date
-
-        async with session.get(
-            f"https://account-public-service-prod03.ol.epicgames.com/account/api/public/account/{user.account_id}/externalAuths",
-            headers={"Authorization": f"bearer {user.access_token}"},
-        ) as external_resp:
-            if external_resp.status != 200:
-                profile_info["externalAuths"] = {}
-            else:
-                external_auths = await external_resp.json()
-                profile_info["externalAuths"] = external_auths
-
-        return profile_info
-
-
-async def get_vbucks_info(session: aiohttp.ClientSession, user: EpicUser) -> dict:
-    async with session.post(
-        f"https://fortnite-public-service-prod11.ol.epicgames.com/fortnite/api/game/v2/profile/{user.account_id}/client/QueryProfile?profileId=common_core&rvn=-1",
-        headers={
-            "Authorization": f"bearer {user.access_token}",
-            "Content-Type": "application/json",
-        },
-        json={},
-    ) as resp:
-        if resp.status != 200:
-            return {"error": f"Error fetching V-Bucks info ({resp.status})"}
-        data = await resp.json()
-
-        vbucks_categories = [
-            "Currency:MtxPurchased",
-            "Currency:MtxEarned",
-            "Currency:MtxGiveaway",
-            "Currency:MtxPurchaseBonus",
-        ]
-
-        total_vbucks = 0
-        profile_items = (
-            data.get("profileChanges", [{}])[0].get("profile", {}).get("items", {})
-        )
-        for item_id, item_data in profile_items.items():
-            if item_data.get("templateId") in vbucks_categories:
-                total_vbucks += item_data.get("quantity", 0)
-
-        return {"totalAmount": total_vbucks}
+#
+# async def get_profile_info(session: aiohttp.ClientSession, user: EpicUser) -> dict:
+#     async with session.post(
+#         f"https://fortnite-public-service-prod11.ol.epicgames.com/fortnite/api/game/v2/profile/{user.account_id}/client/QueryProfile?profileId=common_core&rvn=-1",
+#         headers={"Authorization": f"bearer {user.access_token}"},
+#         json={},
+#     ) as resp:
+#         if resp.status != 200:
+#             return {"error": f"Error fetching profile info ({resp.status})"}
+#         profile_info = await resp.json()
+#
+#         creation_date = (
+#             profile_info.get("profileChanges", [{}])[0]
+#             .get("profile", {})
+#             .get("created", "Unknown")
+#         )
+#         if creation_date != "Unknown":
+#             creation_date = datetime.strptime(
+#                 creation_date, "%Y-%m-%dT%H:%M:%S.%fZ"
+#             ).strftime("%d/%m/%Y")
+#         profile_info["creation_date"] = creation_date
+#
+#         async with session.get(
+#             f"https://account-public-service-prod03.ol.epicgames.com/account/api/public/account/{user.account_id}/externalAuths",
+#             headers={"Authorization": f"bearer {user.access_token}"},
+#         ) as external_resp:
+#             if external_resp.status != 200:
+#                 profile_info["externalAuths"] = {}
+#             else:
+#                 external_auths = await external_resp.json()
+#                 profile_info["externalAuths"] = external_auths
+#
+#         return profile_info
 
 
-async def get_profile_stats(session: aiohttp.ClientSession, user: EpicUser) -> dict:
+# async def get_vbucks_info(session: aiohttp.ClientSession, user: EpicUser) -> dict:
+#     async with session.post(
+#         f"https://fortnite-public-service-prod11.ol.epicgames.com/fortnite/api/game/v2/profile/{user.account_id}/client/QueryProfile?profileId=common_core&rvn=-1",
+#         headers={
+#             "Authorization": f"bearer {user.access_token}",
+#             "Content-Type": "application/json",
+#         },
+#         json={},
+#     ) as resp:
+#         if resp.status != 200:
+#             return {"error": f"Error fetching V-Bucks info ({resp.status})"}
+#         data = await resp.json()
+#
+#         vbucks_categories = [
+#             "Currency:MtxPurchased",
+#             "Currency:MtxEarned",
+#             "Currency:MtxGiveaway",
+#             "Currency:MtxPurchaseBonus",
+#         ]
+#
+#         total_vbucks = 0
+#         profile_items = (
+#             data.get("profileChanges", [{}])[0].get("profile", {}).get("items", {})
+#         )
+#         for item_id, item_data in profile_items.items():
+#             if item_data.get("templateId") in vbucks_categories:
+#                 total_vbucks += item_data.get("quantity", 0)
+#
+#         return {"totalAmount": total_vbucks}
+
+
+async def get_game_profile_info(session: aiohttp.ClientSession, user: EpicUser) -> dict:
     async with session.post(
         f"https://fortnite-public-service-prod11.ol.epicgames.com/fortnite/api/game/v2/profile/{user.account_id}/client/QueryProfile?profileId=athena&rvn=-1",
         headers={
@@ -651,25 +718,36 @@ async def get_profile_stats(session: aiohttp.ClientSession, user: EpicUser) -> d
             .get("attributes", {})
         )
         account_level = attributes.get("accountLevel", 0)
-
+        current_season = attributes.get("season", [])
         past_seasons = attributes.get("past_seasons", [])
-        total_wins = sum(season.get("numWins", 0) for season in past_seasons)
-        total_matches = sum(
-            season.get("numHighBracket", 0)
-            + season.get("numLowBracket", 0)
-            + season.get("numHighBracket_LTM", 0)
-            + season.get("numLowBracket_LTM", 0)
-            + season.get("numHighBracket_Ar", 0)
-            + season.get("numLowBracket_Ar", 0)
-            for season in past_seasons
+        total_wins = attributes.get("lifetime_wins")
+        total_matches = (
+            sum(
+                season.get("numHighBracket", 0)
+                + season.get("numLowBracket", 0)
+                + season.get("numHighBracket_LTM", 0)
+                + season.get("numLowBracket_LTM", 0)
+                + season.get("numHighBracket_Ar", 0)
+                + season.get("numLowBracket_Ar", 0)
+                for season in past_seasons
+            )
+            + current_season.get("numHighBracket", 0)
+            + current_season.get("numLowBracket", 0)
+            + current_season.get("numHighBracket_LTM", 0)
+            + current_season.get("numLowBracket_LTM", 0)
+            + current_season.get("numHighBracket_Ar", 0)
+            + current_season.get("numLowBracket_Ar", 0)
         )
+
         try:
             # Получаем значение last_match_end_datetime из attributes
             last_login_raw = attributes.get("last_match_end_datetime", "N/A")
 
             if last_login_raw != "N/A":
                 # Парсим дату с учетом формата ISO 8601
-                last_played_date = datetime.strptime(last_login_raw, "%Y-%m-%dT%H:%M:%S.%fZ")
+                last_played_date = datetime.strptime(
+                    last_login_raw, "%Y-%m-%dT%H:%M:%S.%fZ"
+                )
 
                 # Преобразуем в offset-aware datetime (добавляем UTC временную зону)
                 last_played_date = last_played_date.replace(tzinfo=UTC)
@@ -706,27 +784,6 @@ async def get_profile_stats(session: aiohttp.ClientSession, user: EpicUser) -> d
             "last_played_info": last_played_info,
             "seasons_info": seasons_info,
         }
-
-
-def create_season_messages(seasons_info):
-    messages = []
-    current_message = "Information about temporary passes\n"
-    message_length = len(current_message)
-
-    for season_info in seasons_info:
-        if message_length + len(season_info) + 2 > 4096:
-            messages.append(current_message)
-            current_message = "Information about temporary passes\n"
-            message_length = len(current_message)
-
-        current_message += season_info + "\n\n"
-        message_length += len(season_info) + 2
-
-    if message_length > 0:
-        messages.append(current_message)
-
-    return messages
-
 
 async def fetch_user_info(session, username):
     api_url = f"https://api.proswapper.xyz/external/name/{username}"
@@ -770,20 +827,20 @@ async def user_info(message: Message):
                 )
                 return
 
-            for user_info in user_info_list:
-                account_id = user_info["id"]
-                display_name = user_info.get("displayName", "Unknown")
+            for current_user_info in user_info_list:
+                account_id = current_user_info["id"]
+                display_name = current_user_info.get("displayName", "Unknown")
 
                 response_text = f"Username: {display_name}\nAccount ID: {account_id}\n"
 
-                psn_auth = user_info.get("externalAuths", {}).get("psn")
+                psn_auth = current_user_info.get("externalAuths", {}).get("psn")
                 if psn_auth:
                     response_text += f"\nAccount ID PSN: {psn_auth['externalAuthId']}\n"
                     response_text += (
                         f"PSN Username: {psn_auth['externalDisplayName']}\n"
                     )
 
-                nintendo_auth = user_info.get("externalAuths", {}).get("nintendo")
+                nintendo_auth = current_user_info.get("externalAuths", {}).get("nintendo")
                 if nintendo_auth:
                     for auth_id in nintendo_auth["authIds"]:
                         response_text += f"\nAccount ID Nintendo: {auth_id['id']}\n"
@@ -839,18 +896,6 @@ async def launch_task(message: Message):
         print(sys.getsizeof(data))
         launch_command = (
             "<code>"
-            f'start /d "{path}"\\FortniteLauncher.exe '
-            f"-AUTH_LOGIN=unused "
-            f"-AUTH_PASSWORD={exchange_code} "
-            f"-AUTH_TYPE=exchangecode "
-            f"-epicapp=Fortnite "
-            f"-epicenv=Prod "
-            f"-EpicPortal "
-            f"-epicuserid={user.account_id}"
-            "</code>"
-        )
-        launch_command2 = (
-            "<code>"
             f'start -WorkingDirectory "C:\\Program Files\\Epic Games\\Fortnite\\FortniteGame\\Binaries\\Win64" '
             f'-FilePath "{path}\\FortniteLauncher.exe" '
             f'-ArgumentList "-AUTH_LOGIN=unused -AUTH_PASSWORD={exchange_code} -AUTH_TYPE=exchangecode -epicapp=Fortnite -epicenv=Prod -EpicPortal -epicuserid={user.account_id}"'
@@ -858,7 +903,7 @@ async def launch_task(message: Message):
         )
 
         await message.answer(
-            f"Start the game using the following command:\n\n{launch_command2}",
+            f"Start the game using the following command:\n\n{launch_command}",
             parse_mode="HTML",
         )
     except Exception as e:
@@ -903,6 +948,7 @@ async def launch_task(message: Message):
 #                             print(f"Error deleting friend {friend['accountId']} ({resp.status})")
 #     except Exception as e:
 
+
 @dp.message(Command("help"))
 async def help_task(message: Message):
     await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
@@ -918,6 +964,7 @@ async def help_task(message: Message):
         await message.answer(text=help_text)
     except Exception as e:
         await message.answer(text=f"Error: {e}")
+
 
 async def get_user_settings(user_id):
     logging.info(f"Вызов get_user_settings для user_id={user_id}")
@@ -947,9 +994,23 @@ async def start(message: Message):
     try:
         async with get_db_connection() as conn:
             async with conn.cursor() as cursor:
-                await TelegramUser.create(cursor=cursor, user_id=message.from_user.id, username=message.from_user.username)
+                await TelegramUser.create(
+                    cursor=cursor,
+                    user_id=message.from_user.id,
+                    username=message.from_user.username,
+                )
+        await message.answer("""
+            Welcome to checker!
+            
+        List of bot commands:
+        /login - Login account to check
+        /launch - launch game with your account
+        /settings - settings, personalisation for bot
+        """)
+
     except Exception as e:
         logger.error("error in start task", e)
+
 
 @dp.message(Command("login"))
 async def login_task(message: Message):
@@ -963,8 +1024,7 @@ async def login_task(message: Message):
             logger.info("таска логина удалена")
 
             await bot.delete_message(
-                chat_id=message.chat.id,
-                message_id=user_messages[user_id]
+                chat_id=message.chat.id, message_id=user_messages[user_id]
             )
             # Удаляем message_id из словаря, так как сообщение больше не существует
             del user_messages[user_id]
@@ -999,14 +1059,21 @@ async def login_task(message: Message):
         async with get_db_connection() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute(
-                    "SELECT need_additional_info_message FROM users WHERE user_id = ?",
+                    "SELECT need_additional_info_message, autodelete_external_auths FROM users WHERE user_id = ?",
                     (message.from_user.id,),
                 )
                 row = await cursor.fetchone()
-                need_additional_info_message = row["need_additional_info_message"] if row else None
+                need_additional_info_message = (
+                    row["need_additional_info_message"] if row else None
+                )
+                autodelete_external_auths = (
+                    row["autodelete_external_auths"] if row else None
+                )
 
         async with aiohttp.ClientSession() as session:
-            await bot.delete_message(chat_id=message.chat.id, message_id=url_device_message.message_id)
+            await bot.delete_message(
+                chat_id=message.chat.id, message_id=url_device_message.message_id
+            )
             # set_affiliate_response = await set_affiliate(
             #     session, current_user.account_id, current_user.access_token, "Kaayyy"
             # )
@@ -1024,7 +1091,7 @@ async def login_task(message: Message):
             if "error" in account_info:
                 await message.answer(account_info["error"])
                 return
-            profile = await get_profile(
+            game_profile = await get_profile(
                 session,
                 {
                     "account_id": current_user.account_id,
@@ -1032,14 +1099,17 @@ async def login_task(message: Message):
                 },
                 "athena",
             )
+            game_profiles_items = game_profile.get("profileChanges", [{}])[0].get("profile", {}).get("items", {})
 
-            vbucks_info = await get_vbucks_info(session, current_user)
-            if "error" in vbucks_info:
-                await message.answer(vbucks_info["error"])
-                return
-
-            profile_info = await get_profile_info(session, current_user)
-            creation_date = profile_info.get("creation_date", "Unknown")
+            common_core_profile_info = await get_profile(
+                session,
+                info={
+                    "account_id": current_user.account_id,
+                    "access_token": current_user.access_token,
+                },
+                profileid="common_core&rvn=-1"
+            )
+            creation_date = common_core_profile_info.get("creation_date", "Unknown")
             external_auths = account_info.get("externalAuths", [])
             message_text = (
                 f"Информация об аккаунте\n"
@@ -1051,18 +1121,17 @@ async def login_task(message: Message):
                 f"🔒 Наличие двухфакторной аутентификации: {bool_to_emoji(account_info.get('tfaEnabled', False))}\n"
                 f"📛 Имя: {account_info.get('name', 'Unknown')}\n"
                 f"🌐 Страна: {account_info.get('country', 'Unknown')} {country_to_flag(account_info.get('country', ''))}\n"
-                f"💰 Кошелек: {vbucks_info.get('totalAmount', 0)}\n"
+                f"💰 Кошелек: {common_core_profile_info.get('totalAmount', 0)}\n"
                 f"🏷 Дата создания: {creation_date}\n"
             )
-
-
-
+            external_auths_message_text = ""
             if external_auths:
                 connected_accounts_message = "Подключенные аккаунты\n"
 
                 for auth in external_auths:
                     auth_type = auth.get("type", "Неизвестно").lower()
                     display_name = auth.get("externalDisplayName", "Неизвестно")
+                    external_type = auth.get("type", "Unknown")
                     external_id = auth.get("externalAuthId", "Неизвестно")
                     date_added = auth.get("dateAdded", "Неизвестно")
                     if date_added != "Неизвестно":
@@ -1075,27 +1144,44 @@ async def login_task(message: Message):
                         f"Имя: {display_name}\n"
                         f"Связан: {date_added}\n\n"
                     )
+                    if autodelete_external_auths:
+                        await delete_external_auths(
+                            session,
+                            {
+                                "account_id": current_user.account_id,
+                                "access_token": current_user.access_token,
+                            },
+                            external_type
+                        )
+                        external_auths_message_text += f"{external_type} auth deleted\n"
+
             else:
                 connected_accounts_message = "Подключенных аккаунтов нет\n"
-
-
             logger.info("Sent connected accounts information")
-            account_stats = await get_profile_stats(session, current_user)
-            if "error" in account_stats:
-                await message.answer(account_stats["error"])
+            game_profile_info = await get_game_profile_info(session, current_user)
+            if "error" in game_profile_info:
+                await message.answer(game_profile_info["error"])
                 return
+            # library  = await get_account_library(
+            #     session,
+            #     {
+            #         "account_id": current_user.account_id,
+            #         "access_token": current_user.access_token,
+            #     },
+            # )
+            # print(library)
 
             if need_additional_info_message:
                 additional_info_message = (
                     f"Дополнительная информация (BR & ZB)\n"
-                    f"🆔 Уровень аккаунта: {account_stats['account_level']}\n"
-                    f"🏆 Всего побед: {account_stats['total_wins']}\n"
-                    f"🎟 Всего матчей: {account_stats['total_matches']}\n"
-                    f"🕒 Последняя сыгранная игра: {account_stats['last_played_info']}\n"
+                    f"🆔 Уровень аккаунта: {game_profile_info['account_level']}\n"
+                    f"🏆 Всего побед: {game_profile_info['total_wins']}\n"
+                    f"🎟 Всего матчей: {game_profile_info['total_matches']}\n"
+                    f"🕒 Последняя сыгранная игра: {game_profile_info['last_played_info']}\n"
                 )
 
                 logger.info("Sent additional information")
-                seasons_info_embeds = account_stats["seasons_info"]
+                seasons_info_embeds = game_profile_info["seasons_info"]
                 if seasons_info_embeds:
                     seasons_info_message = (
                         "Информация о прошлом сезоне (BR и ZB)\n\n"
@@ -1106,89 +1192,88 @@ async def login_task(message: Message):
 
                 logger.info("Sent seasons information")
 
-                username = message.from_user.username
+            username = message.from_user.username
 
-                settings = await get_user_settings(message.from_user.id)
+            settings = await get_user_settings(message.from_user.id)
 
-                item_groups = {
-                    "Skins": [],  # Список для предметов
-                    "Backpacks": [],
-                    "Pickaxes": [],
-                    "Emotes": [],
-                    "Gliders": [],
-                    "Wraps": [],
-                    "Sprays": [],
-                }
-                profile_info_obj = list(
-                    profile["profileChanges"][0]["profile"]["items"].values()
-                )
-                filtered_items = filter(
-                    lambda item: item.get("attributes", {}).get("item_seen")
-                    is not None,
-                    profile_info_obj,
-                )
-                for item in filtered_items:
-                    try:
-                        template_id = item.get("templateId", "")
-                        if idpattern.match(template_id):
-                            item_type = await get_cosmetic_type(template_id)
-                            if item_type and settings.get(
-                                f"{item_type}_enabled".lower()
-                            ):
-                                item_groups[item_type].append(template_id.split(":")[1])
-                    except Exception as e:
-                        logger.error(
-                            f"Ошибка при получении значений из profile.values() : {e}"
+            item_groups = {
+                "Skins": [],  # Список для предметов
+                "Backpacks": [],
+                "Pickaxes": [],
+                "Emotes": [],
+                "Gliders": [],
+                "Wraps": [],
+                "Sprays": [],
+            }
+            game_profile_items_values = list(
+                game_profiles_items.values()
+            )
+            filtered_items = filter(
+                lambda filtered_item: filtered_item.get("attributes", {}).get("item_seen") is not None,
+                game_profile_items_values,
+            )
+            for item in filtered_items:
+                try:
+                    template_id = item.get("templateId", "")
+                    if idpattern.match(template_id):
+                        item_type = await get_cosmetic_type(template_id)
+                        if item_type and settings.get(f"{item_type}_enabled".lower()):
+                            item_groups[item_type].append(template_id.split(":")[1])
+                except Exception as e:
+                    logger.error(
+                        f"Ошибка при получении значений из profile.values() : {e}"
+                    )
+                    continue
+
+            combined_images = []
+            for group in item_groups:
+                if group in item_groups:
+                    sorted_ids = await sort_ids_by_rarity(item_groups[group], session)
+                    if sorted_ids:
+
+                        image_data = await create_img(
+                            sorted_ids,
+                            session,
+                            username=username,
+                            sort_by_rarity=False,
+                            group=group,
                         )
-                        continue
-
-                combined_images = []
-                for group in item_groups:
-                    if group in item_groups:
-                        sorted_ids = await sort_ids_by_rarity(
-                            item_groups[group], session
-                        )
-                        if sorted_ids:
-
-                            image_data = await create_img(
-                                sorted_ids, session, username=username, sort_by_rarity=False, group=group,
-                            )
-                            if not image_data:
-                                logger.error(
-                                    f"Failed to generate image for group {group}. Image data is empty."
-                                )
-                                continue
-                            try:
-                                image_file = BufferedInputFile(
-                                    file=image_data, filename=f"image_{group}.png"
-                                )
-                                combined_images.append(
-                                    InputMediaPhoto(
-                                        media=image_file,
-                                        caption=f"Image {group}",
-                                        parse_mode=None,
-                                        caption_entities=None,
-                                        show_caption_above_media=None,
-                                        has_spoiler=None,
-                                    )
-                                )
-                            except Exception as e:
-                                logger.error(f"Ошибка в цикле groups: {e}")
-                                continue
-                        else:
-                            logger.warning(
-                                f"No items found for group {group}. Skipping."
+                        if not image_data:
+                            logger.error(
+                                f"Failed to generate image for group {group}. Image data is empty."
                             )
                             continue
+                        try:
+                            image_file = BufferedInputFile(
+                                file=image_data, filename=f"image_{group}.png"
+                            )
+                            combined_images.append(
+                                InputMediaPhoto(
+                                    media=image_file,
+                                    caption=f"Image {group}",
+                                    parse_mode=None,
+                                    caption_entities=None,
+                                    show_caption_above_media=None,
+                                    has_spoiler=None,
+                                )
+                            )
+                        except Exception as e:
+                            logger.error(f"Ошибка в цикле groups: {e}")
+                            continue
+                    else:
+                        logger.warning(f"No items found for group {group}. Skipping.")
+                        continue
 
-                if isinstance(profile, str):
-                    await message.answer(profile)
-                    return
-                await message.answer(message_text)
-                await message.answer(connected_accounts_message)
-                await message.answer(additional_info_message)
-                await message.answer(seasons_info_message)
-                await message.answer_media_group(media=combined_images)
+            if isinstance(game_profile, str):
+                await message.answer(game_profile)
+                return
+            if external_auths_message_text:
+                await message.answer(external_auths_message_text)
+            await message.answer(message_text)
+            await message.answer(connected_accounts_message)
+            await message.answer(additional_info_message)
+            await message.answer(seasons_info_message)
+            await message.answer_media_group(media=combined_images)
             async with get_db_connection() as conn:
                 async with conn.cursor() as cursor:
                     await telegram_user.save(cursor)
@@ -1216,17 +1301,26 @@ async def build_keyboard(menu_name: str, user_id: int) -> InlineKeyboardMarkup:
 
     async with get_db_connection() as conn:
         async with conn.cursor() as cursor:
-            await cursor.execute('''SELECT * FROM users 
-                                            WHERE user_id = ?''', (user_id,))
+            await cursor.execute(
+                """SELECT * FROM users 
+                                            WHERE user_id = ?""",
+                (user_id,),
+            )
             user = await cursor.fetchone()
 
             # Если пользователя нет - создаем
             if not user:
-                await cursor.execute('''INSERT INTO users (user_id) 
-                             VALUES (?)''', (user_id,))
+                await cursor.execute(
+                    """INSERT INTO users (user_id) 
+                             VALUES (?)""",
+                    (user_id,),
+                )
                 await conn.commit()
-                await cursor.execute('''SELECT * FROM users 
-                                    WHERE user_id = ?''', (user_id,))
+                await cursor.execute(
+                    """SELECT * FROM users 
+                                    WHERE user_id = ?""",
+                    (user_id,),
+                )
                 user = await cursor.fetchone()
 
         # Добавляем переключатели для полей
@@ -1238,10 +1332,8 @@ async def build_keyboard(menu_name: str, user_id: int) -> InlineKeyboardMarkup:
                 builder.button(
                     text=f"{label} {status}",
                     callback_data=ItemsCallback(
-                        menu=menu_name,
-                        action="toggle",
-                        field=field
-                    ).pack()
+                        menu=menu_name, action="toggle", field=field
+                    ).pack(),
                 )
 
         # Добавляем кнопки навигации
@@ -1250,10 +1342,8 @@ async def build_keyboard(menu_name: str, user_id: int) -> InlineKeyboardMarkup:
                 builder.button(
                     text=btn["text"],
                     callback_data=SettingsCallback(
-                        menu=menu_name,
-                        action="navigate",
-                        section=btn["menu"]
-                    ).pack()
+                        menu=menu_name, action="navigate", section=btn["menu"]
+                    ).pack(),
                 )
 
         # Добавляем кнопку "Назад"
@@ -1261,10 +1351,8 @@ async def build_keyboard(menu_name: str, user_id: int) -> InlineKeyboardMarkup:
             builder.button(
                 text="🔙 Назад",
                 callback_data=SettingsCallback(
-                    menu=menu_name,
-                    action="navigate",
-                    section=menu["back"]
-                ).pack()
+                    menu=menu_name, action="navigate", section=menu["back"]
+                ).pack(),
             )
 
     # Оптимизируем расположение кнопок
@@ -1277,18 +1365,20 @@ async def cmd_settings(message: types.Message):
     await message.delete()
     sent = await message.answer(
         text=MENU_CONFIG["main"]["title"],
-        reply_markup= await build_keyboard("main", message.from_user.id)
+        reply_markup=await build_keyboard("main", message.from_user.id),
     )
     # Сохраняем ID сообщения для последующего обновления
     user_messages[message.from_user.id] = sent.message_id
 
 
 @router.callback_query(SettingsCallback.filter(F.action == "navigate"))
-async def handle_navigation(callback: types.CallbackQuery, callback_data: SettingsCallback):
+async def handle_navigation(
+    callback: types.CallbackQuery, callback_data: SettingsCallback
+):
     await callback.answer()
     await callback.message.edit_text(
         text=MENU_CONFIG[callback_data.section]["title"],
-        reply_markup= await build_keyboard(callback_data.section, callback.from_user.id)
+        reply_markup=await build_keyboard(callback_data.section, callback.from_user.id),
     )
 
 
@@ -1302,8 +1392,7 @@ async def handle_toggle(callback: CallbackQuery, callback_data: ItemsCallback):
             async with conn.cursor() as cursor:
                 # Получаем текущее состояние
                 await cursor.execute(
-                    f"SELECT {field} FROM users WHERE user_id = ?",
-                    (user_id,)
+                    f"SELECT {field} FROM users WHERE user_id = ?", (user_id,)
                 )
                 result = await cursor.fetchone()
                 current_state = result[0] if result else None
@@ -1314,14 +1403,13 @@ async def handle_toggle(callback: CallbackQuery, callback_data: ItemsCallback):
                 # Обновляем только если состояние изменится
                 await cursor.execute(
                     f"UPDATE users SET {field} = ? WHERE user_id = ?",
-                    (new_state, user_id)
+                    (new_state, user_id),
                 )
                 await conn.commit()
 
                 # Проверяем реальное изменение
                 await cursor.execute(
-                    f"SELECT {field} FROM users WHERE user_id = ?",
-                    (user_id,)
+                    f"SELECT {field} FROM users WHERE user_id = ?", (user_id,)
                 )
                 result = await cursor.fetchone()
                 updated_state = result[0] if result else None

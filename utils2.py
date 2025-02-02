@@ -167,7 +167,7 @@ MENU_CONFIG = {
         "title": "⚙️ Главное меню настроек",
         "buttons": [
             {"text": "🖼 Настройки отображения", "menu": "items"},
-            {"text": "⚙️ Автоматизация", "menu": "other"}
+            {"text": "⚙️ Автоматизация", "menu": "other"},
         ],
     },
     "items": {
@@ -182,7 +182,7 @@ MENU_CONFIG = {
             "sprays_enabled": "Спреи",
             "all_items_enabled": "Все предметы",
         },
-        "back": "main"
+        "back": "main",
     },
     "other": {
         "title": "⚙️ Автоматизация",
@@ -196,8 +196,8 @@ MENU_CONFIG = {
             # "logo_enabled": "Логотип",
             # "need_additional_info_message": "Запрос доп. информации"
         },
-        "back": "main"
-    }
+        "back": "main",
+    },
 }
 
 Image.MAX_IMAGE_PIXELS = None
@@ -440,6 +440,7 @@ IOS_CREDENTIALS = base64.b64encode(
 
 SWITCH_TOKEN = "OThmN2U0MmMyZTNhNGY4NmE3NGViNDNmYmI0MWVkMzk6MGEyNDQ5YTItMDAxYS00NTFlLWFmZWMtM2U4MTI5MDFjNGQ3"
 IOS_TOKEN = "MzQ0NmNkNzI2OTRjNGE0NDg1ZDgxYjc3YWRiYjIxNDE6OTIwOWQ0YTVlMjVhNDU3ZmI5YjA3NDg5ZDMxM2I0MWE="
+GRAPHQL_TOKEN = "319e1527d0be4457a1067829fc0ad86e"
 
 
 async def get_cosmetic_requirements(filename):
