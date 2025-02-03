@@ -20,7 +20,7 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from utils2 import *
+from utils import *
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -971,22 +971,12 @@ async def get_user_settings(user_id):
     async with get_db_connection() as conn:
         async with conn.cursor() as cursor:
             await cursor.execute(
-                "SELECT skins_enabled, backpacks_enabled, pickaxes_enabled, emotes_enabled, gliders_enabled, wraps_enabled, sprays_enabled, all_items_enabled "
-                "FROM users WHERE user_id = ?",
+                "SELECT * FROM users WHERE user_id = ?",
                 (user_id,),
             )
             result = await cursor.fetchone()
             if result:
-                return {
-                    "skins_enabled": bool(result[0]),
-                    "backpacks_enabled": bool(result[1]),
-                    "pickaxes_enabled": bool(result[2]),
-                    "emotes_enabled": bool(result[3]),
-                    "gliders_enabled": bool(result[4]),
-                    "wraps_enabled": bool(result[5]),
-                    "sprays_enabled": bool(result[6]),
-                    "all_items_enabled": bool(result[7]),
-                }
+                return dict(result)
 
 
 @dp.message(Command("start"))
@@ -1059,7 +1049,7 @@ async def login_task(message: Message):
         async with get_db_connection() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute(
-                    "SELECT need_additional_info_message, autodelete_external_auths FROM users WHERE user_id = ?",
+                    "SELECT need_additional_info_message, autodelete_external_auths, all_items_enabled FROM users WHERE user_id = ?",
                     (message.from_user.id,),
                 )
                 row = await cursor.fetchone()
@@ -1069,6 +1059,7 @@ async def login_task(message: Message):
                 autodelete_external_auths = (
                     row["autodelete_external_auths"] if row else None
                 )
+        settings = await get_user_settings(message.from_user.id)
 
         async with aiohttp.ClientSession() as session:
             await bot.delete_message(
@@ -1194,8 +1185,6 @@ async def login_task(message: Message):
 
             username = message.from_user.username
 
-            settings = await get_user_settings(message.from_user.id)
-
             item_groups = {
                 "Skins": [],  # Список для предметов
                 "Backpacks": [],
@@ -1204,6 +1193,7 @@ async def login_task(message: Message):
                 "Gliders": [],
                 "Wraps": [],
                 "Sprays": [],
+                "Items": []
             }
             game_profile_items_values = list(
                 game_profiles_items.values()
@@ -1217,8 +1207,11 @@ async def login_task(message: Message):
                     template_id = item.get("templateId", "")
                     if idpattern.match(template_id):
                         item_type = await get_cosmetic_type(template_id)
+                        item = template_id.split(":")[1]
                         if item_type and settings.get(f"{item_type}_enabled".lower()):
-                            item_groups[item_type].append(template_id.split(":")[1])
+                            item_groups[item_type].append(item)
+                        if settings.get(f"all_items_enabled"):
+                            item_groups["Items"].append(item)
                 except Exception as e:
                     logger.error(
                         f"Ошибка при получении значений из profile.values() : {e}"
