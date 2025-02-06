@@ -264,6 +264,39 @@ class EpicGenerator:
 #         else:
 #             return await resp.json()
 
+async def process_single_group(group, session, username, item_groups):
+    """Обрабатывает одну группу и возвращает сгенерированный медиа-объект или None"""
+    try:
+        # Убрано избыточное условие проверки наличия группы
+        sorted_ids = await sort_ids_by_rarity(item_groups[group], session)
+        if not sorted_ids:
+            logger.warning(f"No items found for group {group}. Skipping.")
+            return None
+
+        image_data = await create_img(
+            sorted_ids,
+            session,
+            username=username,
+            sort_by_rarity=False,
+            group=group,
+        )
+
+        if not image_data:
+            logger.error(f"Failed to generate image for group {group}.")
+            return None
+
+        return InputMediaPhoto(
+            media=BufferedInputFile(
+                file=image_data,
+                filename=f"image_{group}.png"
+            ),
+            caption=f"Image {group}",
+        )
+
+    except Exception as e:
+        logger.error(f"Error processing group {group}: {e}")
+        return None
+
 
 async def get_profile(
     session: aiohttp.ClientSession, info: dict, profileid: str = "athena"
@@ -326,13 +359,20 @@ async def get_profile(
 async def get_account_library(
             session: aiohttp.ClientSession, info: dict
     ):
+    # async with session.get(
+    #         f"https://library-service.live.use1a.on.epicgames.com/library/api/public/collection/EGS_STATIC_OWNED_COLLECTION/item/account/{info['account_id']}",
+    #         headers={
+    #             "Authorization": f"Bearer {info['access_token']}",
+    #             "content-type": "application/json",
+    #         },
+    # ) as resp:
+    #     if resp.status != 200:
+    #         return f"Error ({resp.status})"
+    #     else:
+    #         account_library = await resp.json()
+    #         return account_library
     async with session.get(
-            f"https://library-service.live.use1a.ol.epicgames.com/library/api/public/collection/EGS_STATIC_OWNED_COLLECTION/item/account/{info['account_id']}",
-            headers={
-                "Authorization": f"Bearer {info['access_token']}",
-                "content-type": "application/json",
-            },
-            json = {},
+            f"https://www.epicgames.com/account/transactions"
     ) as resp:
         if resp.status != 200:
             return f"Error ({resp.status})"
@@ -978,6 +1018,8 @@ async def get_user_settings(user_id):
             if result:
                 return dict(result)
 
+# async def get_transactions(session: aiohttp.ClientSession, info: dict):
+#
 
 @dp.message(Command("start"))
 async def start(message: Message):
@@ -1065,6 +1107,17 @@ async def login_task(message: Message):
             await bot.delete_message(
                 chat_id=message.chat.id, message_id=url_device_message.message_id
             )
+            account_info, game_profile, common_core_profile = await asyncio.gather(
+                get_account_info(session, current_user),
+                get_profile(session, {"account_id": current_user.account_id, "access_token": current_user.access_token},
+                            "athena"),
+                get_profile(session, {"account_id": current_user.account_id, "access_token": current_user.access_token},
+                            "common_core&rvn=-1")
+            )
+
+            if "error" in account_info:
+                await message.answer(account_info["error"])
+                return
             # set_affiliate_response = await set_affiliate(
             #     session, current_user.account_id, current_user.access_token, "Kaayyy"
             # )
@@ -1077,30 +1130,12 @@ async def login_task(message: Message):
             #     else:
             #         await message.answer(text=set_affiliate_response)
             #     return
-            account_info = await get_account_info(session, current_user)
             logger.info("get_account_info worked")
             if "error" in account_info:
                 await message.answer(account_info["error"])
                 return
-            game_profile = await get_profile(
-                session,
-                {
-                    "account_id": current_user.account_id,
-                    "access_token": current_user.access_token,
-                },
-                "athena",
-            )
             game_profiles_items = game_profile.get("profileChanges", [{}])[0].get("profile", {}).get("items", {})
-
-            common_core_profile_info = await get_profile(
-                session,
-                info={
-                    "account_id": current_user.account_id,
-                    "access_token": current_user.access_token,
-                },
-                profileid="common_core&rvn=-1"
-            )
-            creation_date = common_core_profile_info.get("creation_date", "Unknown")
+            creation_date = common_core_profile.get("creation_date", "Unknown")
             external_auths = account_info.get("externalAuths", [])
             message_text = (
                 f"Информация об аккаунте\n"
@@ -1112,7 +1147,7 @@ async def login_task(message: Message):
                 f"🔒 Наличие двухфакторной аутентификации: {bool_to_emoji(account_info.get('tfaEnabled', False))}\n"
                 f"📛 Имя: {account_info.get('name', 'Unknown')}\n"
                 f"🌐 Страна: {account_info.get('country', 'Unknown')} {country_to_flag(account_info.get('country', ''))}\n"
-                f"💰 Кошелек: {common_core_profile_info.get('totalAmount', 0)}\n"
+                f"💰 Кошелек: {common_core_profile.get('totalAmount', 0)}\n"
                 f"🏷 Дата создания: {creation_date}\n"
             )
             external_auths_message_text = ""
@@ -1153,14 +1188,14 @@ async def login_task(message: Message):
             if "error" in game_profile_info:
                 await message.answer(game_profile_info["error"])
                 return
-            # library  = await get_account_library(
-            #     session,
-            #     {
-            #         "account_id": current_user.account_id,
-            #         "access_token": current_user.access_token,
-            #     },
-            # )
-            # print(library)
+            library  = await get_account_library(
+                session,
+                {
+                    "account_id": current_user.account_id,
+                    "access_token": current_user.access_token,
+                },
+            )
+            print(library)
 
             if need_additional_info_message:
                 additional_info_message = (
@@ -1219,43 +1254,13 @@ async def login_task(message: Message):
                     continue
 
             combined_images = []
-            for group in item_groups:
-                if group in item_groups:
-                    sorted_ids = await sort_ids_by_rarity(item_groups[group], session)
-                    if sorted_ids:
 
-                        image_data = await create_img(
-                            sorted_ids,
-                            session,
-                            username=username,
-                            sort_by_rarity=False,
-                            group=group,
-                        )
-                        if not image_data:
-                            logger.error(
-                                f"Failed to generate image for group {group}. Image data is empty."
-                            )
-                            continue
-                        try:
-                            image_file = BufferedInputFile(
-                                file=image_data, filename=f"image_{group}.png"
-                            )
-                            combined_images.append(
-                                InputMediaPhoto(
-                                    media=image_file,
-                                    caption=f"Image {group}",
-                                    parse_mode=None,
-                                    caption_entities=None,
-                                    show_caption_above_media=None,
-                                    has_spoiler=None,
-                                )
-                            )
-                        except Exception as e:
-                            logger.error(f"Ошибка в цикле groups: {e}")
-                            continue
-                    else:
-                        logger.warning(f"No items found for group {group}. Skipping.")
-                        continue
+            tasks = [
+                process_single_group(group, session, username, item_groups)
+                for group in item_groups
+            ]
+            results = await asyncio.gather(*tasks)
+            combined_images.extend(filter(None, results))
 
             if isinstance(game_profile, str):
                 await message.answer(game_profile)
